@@ -1,0 +1,363 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap");
+
+:root {
+  --primary: #8e24aa;
+  --primary-dark: #5e35b1;
+  --accent: #ab47bc;
+  --light-bg: #f9f4ff;
+  --gradient: linear-gradient(145deg, #e2c5ff, #cfa3f0);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: "Poppins", sans-serif;
+  color: #222;
+  background: var(--light-bg);
+  overflow: hidden;
+}
+
+/* === LAYOUT === */
+.container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Left Section */
+.left-section {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--gradient);
+  position: relative;
+  background-size: 200% 200%;
+  animation: gradientMove 6s ease infinite;
+  min-width: 0;
+}
+
+@keyframes gradientMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Glass card */
+.login-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  border-radius: 20px;
+  padding: 50px 60px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.login-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.2);
+}
+
+/* === TITLES === */
+.app-title {
+  font-size: 48px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--primary-dark);
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 24px;
+}
+
+.login-title {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin-bottom: 20px;
+  letter-spacing: 0.5px;
+}
+
+/* === FORM === */
+.form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+  color: #000;
+  transition: 0.25s;
+}
+
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(142, 36, 170, 0.15);
+}
+
+/* === PASSWORD FIELD === */
+.password-field {
+  position: relative;
+  width: 100%;
+  margin-bottom: 18px;
+}
+
+.password-field .form-input {
+  padding-right: 42px;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(90, 70, 140, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  height: 100%;
+  transition: color 0.2s ease;
+}
+
+.toggle-password:hover {
+  color: #4a2c91;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.2;
+  pointer-events: none;
+}
+
+/* === OPTIONS === */
+.options-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: -6px;
+  margin-bottom: 20px;
+}
+
+.remember-me {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #333;
+}
+
+.remember-me input[type="checkbox"] {
+  accent-color: var(--primary);
+  transform: scale(1.1);
+  margin: 0;
+}
+
+.forgot-btn {
+  font-size: 12px;
+  color: var(--primary-dark);
+  border: 1px solid rgba(142, 36, 170, 0.4);
+  border-radius: 20px;
+  padding: 4px 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.forgot-btn:hover {
+  background: var(--primary);
+  color: white;
+}
+
+/* === LOGIN BUTTON === */
+.login-btn {
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--primary) 0%,
+    var(--primary-dark) 100%
+  );
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 6px 14px rgba(142, 36, 170, 0.25);
+}
+
+.login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(142, 36, 170, 0.35);
+  filter: brightness(1.1);
+}
+
+/* === RIGHT SECTION === */
+.right-section {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+
+.right-section img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.02);
+  transition: transform 3s ease;
+}
+
+.right-section:hover img {
+  transform: scale(1.03);
+}
+
+/* Soft overlay */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.right-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    270deg,
+    rgba(233, 202, 255, 0.2) 0%,
+    rgba(232, 211, 255, 0.4) 40%,
+    rgba(233, 202, 255, 0.8) 100%
+  );
+  mix-blend-mode: screen;
+}
+
+/* === SUSPENDED MODAL === */
+.suspended-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 17, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  z-index: 999;
+}
+
+.suspended-modal-card {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 420px;
+  width: 100%;
+  padding: 32px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.suspended-modal-card h3 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  color: var(--primary-dark);
+}
+
+.suspended-modal-message {
+  font-size: 15px;
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.suspended-modal-subtext {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+.suspended-modal-button {
+  background: linear-gradient(
+    90deg,
+    var(--primary) 0%,
+    var(--primary-dark) 100%
+  );
+  color: #fff;
+  border: none;
+  border-radius: 9999px;
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(142, 36, 170, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.suspended-modal-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(142, 36, 170, 0.35);
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 960px) {
+  .container {
+    flex-direction: column;
+  }
+
+  .left-section {
+    justify-content: flex-start;
+    align-items: center;
+    padding: 60px 20px;
+  }
+
+  .login-card {
+    margin-top: 20px;
+    width: 90%;
+    padding: 32px 24px;
+  }
+
+  .app-title {
+    font-size: 36px;
+  }
+
+  .right-section {
+    order: -1;
+    height: 200px;
+  }
+}

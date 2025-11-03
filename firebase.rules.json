@@ -1,0 +1,93 @@
+{
+  "rules": {
+    "users": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Super Admin' || root.child('users').child(auth.uid).child('role').val() === 'Admin'",
+      "$uid": {
+        ".read": "auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'Admin'",
+        ".write": "auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'Admin'",
+        "role": {
+          ".write": "root.child('users').child(auth.uid).child('role').val() === 'Super Admin' || root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+        },
+        "status": {
+          ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+        }
+      }
+    },
+    "roles": {
+      ".read": "auth != null",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Super Admin' || root.child('users').child(auth.uid).child('role').val() === 'Admin'",
+      "$roleId": {
+        ".read": true,
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Super Admin' || root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+      }
+    },
+    "auditLogs": {
+      ".read": "root.child('users').child(auth.uid).child('role').val() === 'Super Admin' || root.child('users').child(auth.uid).child('role').val() === 'Admin'",
+      ".write": "auth != null",
+      "$logId": {
+        ".read": "root.child('users').child(auth.uid).child('role').val() === 'Super Admin' || root.child('users').child(auth.uid).child('role').val() === 'Admin'",
+        ".write": "newData.exists() && !data.exists()",
+        ".validate": "newData.hasChildren(['userId', 'userName', 'userRole', 'action', 'module', 'timestamp', 'details'])"
+      }
+    },
+    "members": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer' || root.child('users').child(auth.uid).child('role').val() === 'Encoder'",
+      "$memberId": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer' || root.child('users').child(auth.uid).child('role').val() === 'Encoder'",
+        ".delete": "root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+      }
+    },
+    "payments": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer' || root.child('users').child(auth.uid).child('role').val() === 'Encoder'",
+      "$paymentId": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer' || root.child('users').child(auth.uid).child('role').val() === 'Encoder'",
+        ".delete": "root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+      }
+    },
+    "services": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'",
+      "$serviceId": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'",
+        "status": {
+          ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'"
+        }
+      }
+    },
+    "reports": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer' || root.child('users').child(auth.uid).child('role').val() === 'Encoder'",
+      "$reportId": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer' || root.child('users').child(auth.uid).child('role').val() === 'Encoder'",
+        ".delete": "root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+      }
+    },
+    "reportTemplates": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'",
+      "$templateId": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'",
+        ".delete": "root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+      }
+    },
+    "availments": {
+      ".read": "root.child('users').child(auth.uid).exists()",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'",
+      "$availmentId": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'Admin' || root.child('users').child(auth.uid).child('role').val() === 'Officer'",
+        ".delete": "root.child('users').child(auth.uid).child('role').val() === 'Admin'"
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}
