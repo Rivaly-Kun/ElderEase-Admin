@@ -1,4 +1,7 @@
-Dependencies:
+# ================================
+# 📦 INSTALL DEPENDENCIES
+# ================================
+
 npm install firebase
 npm install react-router-dom
 npm install lucide-react
@@ -8,13 +11,15 @@ npm install @tensorflow/tfjs
 npm install tesseract.js
 npm install jsqr
 npm install @vladmandic/face-api
-https://github.com/vladmandic/face-api/tree/master
+# Repository: https://github.com/vladmandic/face-api/tree/master
 npm install dotenv
 npm install express body-parser cors twilio dotenv
 npm install node-fetch
 npm install jspdf jspdf-autotable
 npm install recharts
 
-to run:
-node src/services/server.mjs
+# ================================
+# 🚀 RUN THE PROJECT
+# ================================
+
 npm run dev
