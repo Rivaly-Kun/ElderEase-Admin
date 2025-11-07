@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Users,
@@ -18,6 +18,13 @@ import Sidebar from "../Components/Sidebar";
 import Header from "../Components/Header";
 import { db } from "../services/firebase";
 import { ref, get } from "firebase/database";
+import {
+  ensureMemberCollection,
+  isMemberActive,
+  isMemberDeceased,
+} from "../utils/memberStatus";
+import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
+import { canAccessModule } from "../utils/permissionUtils";
 
 const Dashboard = () => {
   const [activeMenu, setActiveMenu] = useState("Dashboard");
@@ -56,52 +63,70 @@ const Dashboard = () => {
   ]);
   const [recentActivities, setRecentActivities] = useState([]);
   const navigate = useNavigate();
+  const { currentUser, loading: currentUserLoading } = useResolvedCurrentUser();
+  const userRole = currentUser?.role || currentUser?.roleName || "Unknown";
 
   // Quick Actions with navigation
-  const quickActions = [
-    {
-      label: "Add New Member",
-      icon: UserPlus,
-      color: "bg-blue-500",
-      action: () =>
-        navigate("/citizens", {
-          state: { openAddMemberModal: true },
-        }),
-    },
-    {
-      label: "Send Notifications",
-      icon: Mail,
-      color: "bg-green-500",
-      action: () => navigate("/notifications"),
-    },
-    {
-      label: "Generate Reports",
-      icon: FileBarChart,
-      color: "bg-red-500",
-      action: () =>
-        navigate("/reports", {
-          state: { initialTab: "generate" },
-        }),
-    },
-    {
-      label: "View Analytics",
-      icon: TrendingUp,
-      color: "bg-purple-500",
-      action: () =>
-        navigate("/reports", {
-          state: { initialTab: "analytics" },
-        }),
-    },
-    {
-      label: "Process Payments",
-      icon: DollarSign,
-      color: "bg-yellow-500",
-      action: () =>
-        navigate("/payments", {
-          state: { openNewPaymentModal: true },
-        }),
-    },
-  ];
+  const quickActions = useMemo(() => {
+    const actions = [
+      {
+        label: "Add New Member",
+        icon: UserPlus,
+        color: "bg-blue-500",
+        action: () =>
+          navigate("/citizens", {
+            state: { openAddMemberModal: true },
+          }),
+        module: "Senior Citizens",
+        actionType: "create",
+      },
+      {
+        label: "Send Notifications",
+        icon: Mail,
+        color: "bg-green-500",
+        action: () => navigate("/notifications"),
+        module: "Notifications",
+        actionType: "view",
+      },
+      {
+        label: "Generate Reports",
+        icon: FileBarChart,
+        color: "bg-red-500",
+        action: () =>
+          navigate("/reports", {
+            state: { initialTab: "generate" },
+          }),
+        module: "Reports",
+        actionType: "view",
+      },
+      {
+        label: "View Analytics",
+        icon: TrendingUp,
+        color: "bg-purple-500",
+        action: () =>
+          navigate("/reports", {
+            state: { initialTab: "analytics" },
+          }),
+        module: "Reports",
+        actionType: "view",
+      },
+      {
+        label: "Process Payments",
+        icon: DollarSign,
+        color: "bg-yellow-500",
+        action: () =>
+          navigate("/payments", {
+            state: { openNewPaymentModal: true },
+          }),
+        module: "Payments",
+        actionType: "create",
+      },
+    ];
+
+    return actions.filter(({ module, actionType }) =>
+      module ? canAccessModule(userRole, module, actionType) : true
+    );
+  }, [navigate, userRole]);
   useEffect(() => {
     const formatCurrency = (amount) =>
       `₱${Number(amount || 0).toLocaleString("en-PH", {
@@ -172,12 +197,14 @@ const Dashboard = () => {
           get(ref(db, "payments")),
         ]);
 
-        const members = membersSnapshot.exists()
+        const rawMembers = membersSnapshot.exists()
           ? Object.entries(membersSnapshot.val()).map(([id, value]) => ({
               id,
               ...value,
             }))
           : [];
+
+        const members = ensureMemberCollection(rawMembers);
 
         const payments = paymentsSnapshot.exists()
           ? Object.entries(paymentsSnapshot.val()).map(([id, value]) => ({
@@ -187,19 +214,16 @@ const Dashboard = () => {
           : [];
 
         // === Stats ===
-        const totalMembers = members.length;
-        const activeMembers = members.filter((member) => {
-          if (typeof member.archived === "boolean") {
-            return !member.archived;
-          }
-          if (member.regSupport) {
-            return `${member.regSupport}`.toLowerCase() === "active";
-          }
-          return true;
-        }).length;
+        const totalMembers = members.filter(
+          (member) => !isMemberDeceased(member)
+        ).length;
+        const activeMembers = members.filter((member) =>
+          isMemberActive(member)
+        ).length;
 
         const pendingVerification = members.filter(
-          (member) => !member.lastVerificationPassed
+          (member) =>
+            !member.lastVerificationPassed && !isMemberDeceased(member)
         ).length;
 
         const totalPayments = payments.reduce((sum, payment) => {
@@ -252,6 +276,7 @@ const Dashboard = () => {
         };
 
         members.forEach((member) => {
+          if (isMemberDeceased(member)) return;
           const age = inferAge(member);
           if (!age || age < 60) return;
 
@@ -289,7 +314,7 @@ const Dashboard = () => {
 
         // === Recent Activities ===
         const memberActivities = members
-          .filter((member) => member.date_created)
+          .filter((member) => member.date_created && !isMemberDeceased(member))
           .map((member) => {
             const identifier =
               member.id ||
@@ -354,7 +379,7 @@ const Dashboard = () => {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header notificationCount={3} />
         <main className="flex-1 overflow-y-auto p-8">
-          {loading ? (
+          {loading || currentUserLoading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-4"></div>
@@ -407,24 +432,31 @@ const Dashboard = () => {
                 <h2 className="text-lg font-semibold text-gray-800 mb-4">
                   Quick Actions
                 </h2>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  {quickActions.map((action, idx) => (
-                    <button
-                      key={action.label}
-                      onClick={action.action}
-                      className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-md transition"
-                    >
-                      <div
-                        className={`p-3 rounded-lg ${action.color} text-white`}
+                {quickActions.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {quickActions.map((action) => (
+                      <button
+                        key={action.label}
+                        onClick={action.action}
+                        className="flex flex-col items-center gap-2 p-4 bg-white rounded-xl border border-gray-200 hover:shadow-md transition"
                       >
-                        <action.icon className="w-6 h-6" />
-                      </div>
-                      <span className="text-sm font-medium text-gray-700">
-                        {action.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                        <div
+                          className={`p-3 rounded-lg ${action.color} text-white`}
+                        >
+                          <action.icon className="w-6 h-6" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-700">
+                          {action.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    No quick actions available for your role. Please contact an
+                    administrator if you need additional access.
+                  </p>
+                )}
               </div>
 
               {/* === Age Demographics & Recent Activities === */}

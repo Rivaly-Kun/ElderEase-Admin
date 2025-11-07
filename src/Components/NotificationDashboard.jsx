@@ -810,7 +810,13 @@ const NotificationDashboard = ({ currentUser }) => {
 
   // Filter members based on search
   const filteredMembers = allMembers.filter((member) => {
-    if (!memberSearchTerm.trim()) return true;
+    // Only show members from registered barangays
+    const memberBarangay = member.address
+      ? member.address.split(",")[member.address.split(",").length - 2]?.trim()
+      : "";
+
+    if (!memberSearchTerm.trim()) return !!memberBarangay; // Only return if has barangay
+
     const searchLower = memberSearchTerm.toLowerCase();
     const firstName = (member.firstName || "").toLowerCase();
     const lastName = (member.lastName || "").toLowerCase();
@@ -818,12 +824,26 @@ const NotificationDashboard = ({ currentUser }) => {
     const contactNum = (member.contactNum || "").toLowerCase();
 
     return (
-      firstName.includes(searchLower) ||
-      lastName.includes(searchLower) ||
-      email.includes(searchLower) ||
-      contactNum.includes(searchLower)
+      !!memberBarangay && // Must have a barangay
+      (firstName.includes(searchLower) ||
+        lastName.includes(searchLower) ||
+        email.includes(searchLower) ||
+        contactNum.includes(searchLower))
     );
   });
+
+  // Get unique barangays from members
+  const registeredBarangays = Array.from(
+    new Set(
+      allMembers
+        .map((member) => {
+          if (!member.address) return null;
+          const parts = member.address.split(",");
+          return parts[parts.length - 2]?.trim();
+        })
+        .filter((b) => !!b)
+    )
+  ).sort();
 
   // Check ClickSend Account Balance
   const handleCheckBalance = async () => {
@@ -1212,13 +1232,18 @@ const NotificationDashboard = ({ currentUser }) => {
   return (
     <div className="p-0">
       {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">
-          Notification Management
-        </h1>
-        <p className="text-gray-600">
-          Send SMS, manage announcements, and track message delivery
-        </p>
+      <div className="mb-8 flex items-center gap-4">
+        <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl flex items-center justify-center">
+          <Bell className="w-8 h-8 text-white" />
+        </div>
+        <div>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            Notification Management
+          </h1>
+          <p className="text-gray-600">
+            Send SMS, manage announcements, and track message delivery
+          </p>
+        </div>
       </div>
 
       {/* Stats Cards - Matching System Theme */}
@@ -1321,107 +1346,35 @@ const NotificationDashboard = ({ currentUser }) => {
             </div>
 
             <div className="space-y-5">
-              {/* Officer & Recipients Row */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-2">
-                    From Officer
-                  </label>
-                  <select
-                    value={smsSenderForm.officer}
-                    onChange={(e) =>
-                      setSmsSenderForm({
-                        ...smsSenderForm,
-                        officer: e.target.value,
-                      })
-                    }
+              {/* Recipients Selection */}
+              <div>
+                <label className="block text-sm font-bold text-gray-900 mb-2">
+                  <Users className="inline w-4 h-4 mr-2" />
+                  Select Recipients from Members
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={memberSearchTerm}
+                    onChange={(e) => {
+                      setMemberSearchTerm(e.target.value);
+                      setShowMemberDropdown(true);
+                    }}
+                    onFocus={() => setShowMemberDropdown(true)}
+                    placeholder="Search by name, email, or phone..."
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                  >
-                    <option value="">Select officer</option>
-                    <option>Admin Officer</option>
-                    <option>Health Officer</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-2">
-                    Select Recipients from Members
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={memberSearchTerm}
-                      onChange={(e) => {
-                        setMemberSearchTerm(e.target.value);
-                        setShowMemberDropdown(true);
-                      }}
-                      onFocus={() => setShowMemberDropdown(true)}
-                      placeholder="Search by name, email, or phone..."
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                    />
+                  />
 
-                    {showMemberDropdown && (
-                      <div
-                        id="member-search-dropdown"
-                        className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-lg z-50"
-                      >
-                        {filteredMembers.length > 0 ? (
-                          filteredMembers.map((member) => {
-                            const isSelected = selectedMembers.some(
-                              (m) => m.id === member.id
-                            );
-                            const displayName =
-                              `${member.firstName || ""} ${
-                                member.lastName || ""
-                              }`.trim() ||
-                              member.email ||
-                              "Unknown";
-                            return (
-                              <div
-                                key={member.id}
-                                onClick={() => handleSelectMember(member)}
-                                className={`px-4 py-2 cursor-pointer border-b ${
-                                  isSelected
-                                    ? "bg-purple-100 text-purple-900"
-                                    : "hover:bg-gray-50"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => {}}
-                                    className="w-4 h-4"
-                                  />
-                                  <div className="flex-1">
-                                    <p className="font-semibold text-sm">
-                                      {displayName}
-                                    </p>
-                                    <p className="text-xs text-gray-600">
-                                      {member.contactNum || "No phone"}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="px-4 py-3 text-gray-500 text-sm">
-                            {memberSearchTerm
-                              ? "No members found"
-                              : "Type to search members"}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {selectedMembers.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-sm font-semibold text-gray-700 mb-2">
-                        Selected Members ({selectedMembers.length}):
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedMembers.map((member) => {
+                  {showMemberDropdown && (
+                    <div
+                      id="member-search-dropdown"
+                      className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-lg z-50"
+                    >
+                      {filteredMembers.length > 0 ? (
+                        filteredMembers.map((member) => {
+                          const isSelected = selectedMembers.some(
+                            (m) => m.id === member.id
+                          );
                           const displayName =
                             `${member.firstName || ""} ${
                               member.lastName || ""
@@ -1431,22 +1384,74 @@ const NotificationDashboard = ({ currentUser }) => {
                           return (
                             <div
                               key={member.id}
-                              className="bg-purple-100 text-purple-900 px-3 py-1 rounded-full text-sm flex items-center gap-2"
+                              onClick={() => handleSelectMember(member)}
+                              className={`px-4 py-2 cursor-pointer border-b ${
+                                isSelected
+                                  ? "bg-purple-100 text-purple-900"
+                                  : "hover:bg-gray-50"
+                              }`}
                             >
-                              <span>{displayName}</span>
-                              <button
-                                onClick={() => handleSelectMember(member)}
-                                className="hover:text-purple-700 font-bold"
-                              >
-                                ✕
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  className="w-4 h-4"
+                                />
+                                <div className="flex-1">
+                                  <p className="font-semibold text-sm">
+                                    {displayName}
+                                  </p>
+                                  <p className="text-xs text-gray-600">
+                                    {member.contactNum || "No phone"}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           );
-                        })}
-                      </div>
+                        })
+                      ) : (
+                        <div className="px-4 py-3 text-gray-500 text-sm">
+                          {memberSearchTerm
+                            ? "No members found"
+                            : "Type to search members"}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
+
+                {selectedMembers.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">
+                      Selected Members ({selectedMembers.length}):
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedMembers.map((member) => {
+                        const displayName =
+                          `${member.firstName || ""} ${
+                            member.lastName || ""
+                          }`.trim() ||
+                          member.email ||
+                          "Unknown";
+                        return (
+                          <div
+                            key={member.id}
+                            className="bg-purple-100 text-purple-900 px-3 py-1 rounded-full text-sm flex items-center gap-2"
+                          >
+                            <span>{displayName}</span>
+                            <button
+                              onClick={() => handleSelectMember(member)}
+                              className="hover:text-purple-700 font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Manual Recipients (optional override) */}
@@ -1497,10 +1502,34 @@ const NotificationDashboard = ({ currentUser }) => {
                   <label className="block text-sm font-bold text-gray-900 mb-2">
                     Use Template
                   </label>
-                  <select className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition">
-                    <option>-- No template --</option>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const selectedTemplate = templates.find(
+                          (t) => t.id === e.target.value
+                        );
+                        if (selectedTemplate) {
+                          const updatedForm = {
+                            ...smsSenderForm,
+                            message: selectedTemplate.content,
+                            subject: selectedTemplate.name,
+                            messageType:
+                              selectedTemplate.category || "reminder",
+                          };
+                          setSmsSenderForm(updatedForm);
+                          alert(
+                            `✅ Template "${selectedTemplate.name}" applied!`
+                          );
+                          // Reset the select to "-- No template --"
+                          e.target.value = "";
+                        }
+                      }
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition bg-white"
+                  >
+                    <option value="">-- No template --</option>
                     {templates.map((template) => (
-                      <option key={template.id} value={template.content}>
+                      <option key={template.id} value={template.id}>
                         {template.name}
                       </option>
                     ))}
@@ -1621,16 +1650,6 @@ const NotificationDashboard = ({ currentUser }) => {
                   <Send size={18} />
                   Send Now
                 </button>
-                <button
-                  onClick={handleCheckBalance}
-                  disabled={checkingBalance}
-                  className="flex-1 px-6 py-3 bg-white border border-green-300 text-green-700 rounded-xl hover:bg-green-50 transition font-semibold disabled:opacity-50"
-                >
-                  {checkingBalance ? "Checking..." : "💰 Check Balance"}
-                </button>
-                <button className="flex-1 px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-semibold">
-                  Preview
-                </button>
               </div>
             </div>
           </div>
@@ -1698,6 +1717,43 @@ const NotificationDashboard = ({ currentUser }) => {
                           {template.content.substring(0, 40)}...
                         </td>
                         <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              console.log("Using template:", template);
+                              const updatedForm = {
+                                ...smsSenderForm,
+                                message: template.content,
+                                subject: template.name,
+                              };
+                              console.log("Updated form:", updatedForm);
+                              setSmsSenderForm(updatedForm);
+                              setActiveTab("sms_sender");
+                              alert(
+                                `✅ Template "${
+                                  template.name
+                                }" applied! Message: "${template.content.substring(
+                                  0,
+                                  50
+                                )}..."`
+                              );
+                              // Force a slight delay to ensure state updates
+                              setTimeout(() => {
+                                const messageField = document.querySelector(
+                                  'textarea[placeholder="Write your message here..."]'
+                                );
+                                if (messageField) {
+                                  messageField.focus();
+                                  messageField.scrollIntoView({
+                                    behavior: "smooth",
+                                  });
+                                }
+                              }, 100);
+                            }}
+                            className="text-purple-600 hover:text-purple-700 mr-2 font-semibold text-xs"
+                            title="Use Template"
+                          >
+                            Use
+                          </button>
                           <button
                             onClick={() => {
                               setEditingTemplate(template);
@@ -1835,8 +1891,29 @@ const NotificationDashboard = ({ currentUser }) => {
                           {msg.sentBy || "Unknown"}
                         </td>
                         <td className="py-4 px-4 text-center">
-                          <button className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-600 hover:bg-gray-100 transition">
+                          <button
+                            onClick={() => {
+                              alert(
+                                `Message Details:\n\nSubject: ${
+                                  msg.subject || "N/A"
+                                }\nRecipients: ${
+                                  msg.recipientCount || 0
+                                }\nStatus: ${msg.status}\nSent by: ${
+                                  msg.sentBy
+                                }\nDate: ${new Date(
+                                  msg.sentDate
+                                ).toLocaleDateString()}\n\nMessage:\n${
+                                  msg.message ||
+                                  msg.content ||
+                                  "No message content"
+                                }`
+                              );
+                            }}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-white bg-purple-600 hover:bg-purple-700 transition font-semibold text-sm"
+                            title="View Message Details"
+                          >
                             <Eye size={16} />
+                            View
                           </button>
                         </td>
                       </tr>
@@ -2732,6 +2809,152 @@ const NotificationDashboard = ({ currentUser }) => {
                 Event details could not be loaded.
               </div>
             )}
+
+            {/* Footer with Cancel Button */}
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={closeAttendanceModal}
+                className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SMS Template Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-orange-600 to-orange-700 px-6 py-6 flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-bold text-white">
+                  {editingTemplate ? "Edit Template" : "Create New Template"}
+                </h3>
+                <p className="text-orange-100 text-sm mt-1">
+                  {editingTemplate
+                    ? "Update your SMS template"
+                    : "Create a reusable SMS template"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setEditingTemplate(null);
+                  setTemplateForm({
+                    name: "",
+                    category: "reminder",
+                    content: "",
+                  });
+                }}
+                className="p-2 text-white hover:bg-orange-500 rounded-lg transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Template Name */}
+              <div>
+                <label className="block text-sm font-bold text-gray-900 mb-2">
+                  Template Name
+                </label>
+                <input
+                  type="text"
+                  value={templateForm.name}
+                  onChange={(e) =>
+                    setTemplateForm({
+                      ...templateForm,
+                      name: e.target.value,
+                    })
+                  }
+                  placeholder="e.g., Birthday Greetings, Health Reminder"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition"
+                />
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="block text-sm font-bold text-gray-900 mb-2">
+                  Category
+                </label>
+                <select
+                  value={templateForm.category}
+                  onChange={(e) =>
+                    setTemplateForm({
+                      ...templateForm,
+                      category: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition bg-white"
+                >
+                  <option value="reminder">Reminder</option>
+                  <option value="announcement">Announcement</option>
+                  <option value="alert">Alert</option>
+                  <option value="greeting">Greeting</option>
+                  <option value="event">Event</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              {/* Content */}
+              <div>
+                <label className="block text-sm font-bold text-gray-900 mb-2">
+                  Message Content
+                </label>
+                <textarea
+                  value={templateForm.content}
+                  onChange={(e) =>
+                    setTemplateForm({
+                      ...templateForm,
+                      content: e.target.value,
+                    })
+                  }
+                  placeholder="Enter your SMS message template (max 160 characters recommended)"
+                  rows="6"
+                  maxLength="500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition resize-none"
+                />
+                <div className="mt-2 flex justify-between text-sm">
+                  <span className="text-gray-600">
+                    Characters: {templateForm.content.length}/500
+                  </span>
+                  {templateForm.content.length > 160 && (
+                    <span className="text-orange-600 font-semibold">
+                      ⚠️ Message exceeds standard SMS length (
+                      {Math.ceil(templateForm.content.length / 160)} parts)
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setEditingTemplate(null);
+                  setTemplateForm({
+                    name: "",
+                    category: "reminder",
+                    content: "",
+                  });
+                }}
+                className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                disabled={
+                  !templateForm.name.trim() || !templateForm.content.trim()
+                }
+                className="px-6 py-2.5 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl hover:from-orange-700 hover:to-orange-800 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingTemplate ? "Update Template" : "Create Template"}
+              </button>
+            </div>
           </div>
         </div>
       )}

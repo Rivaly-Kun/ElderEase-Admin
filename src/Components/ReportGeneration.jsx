@@ -34,7 +34,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
     executiveSummary: true,
     demographic: true,
     financial: true,
-    chartsGraphs: false,
+    chartsGraphs: true,
   });
   const [lastGeneratedReportId, setLastGeneratedReportId] = useState(null);
 
@@ -155,8 +155,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
           ? [80, 150]
           : selectedAgeGroup.split("-").map(Number);
       filteredMembers = filteredMembers.filter((m) => {
-        const age =
-          new Date().getFullYear() - new Date(m.dateOfBirth).getFullYear();
+        const age = m.age || 0; // Use age field directly from database
         return age >= ageMin && age <= ageMax;
       });
     }
@@ -438,6 +437,73 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
           margin: { left: margin, right: margin },
         });
 
+        yPos = doc.lastAutoTable.finalY + 10;
+
+        // Age Group Breakdown
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(10);
+        doc.text("Age Group Breakdown", margin, yPos);
+        yPos += 6;
+
+        const ageGroups = {
+          "60-65": 0,
+          "66-70": 0,
+          "71-75": 0,
+          "76-80": 0,
+          "80+": 0,
+        };
+
+        filteredMembers.forEach((m) => {
+          const age = m.age || 0; // Use age field directly from database
+          if (age >= 60 && age <= 65) ageGroups["60-65"]++;
+          else if (age >= 66 && age <= 70) ageGroups["66-70"]++;
+          else if (age >= 71 && age <= 75) ageGroups["71-75"]++;
+          else if (age >= 76 && age <= 80) ageGroups["76-80"]++;
+          else if (age > 80) ageGroups["80+"]++;
+        });
+
+        const ageGroupData = Object.entries(ageGroups).map(([range, count]) => [
+          range,
+          count.toString(),
+        ]);
+
+        doc.autoTable({
+          startY: yPos,
+          head: [["Age Range", "Count"]],
+          body: ageGroupData,
+          theme: "grid",
+          headStyles: { fillColor: [75, 0, 130], textColor: 255 },
+          bodyStyles: { textColor: 0 },
+          margin: { left: margin, right: margin },
+        });
+
+        yPos = doc.lastAutoTable.finalY + 10;
+
+        // Barangay Breakdown
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(10);
+        doc.text("Barangay Distribution", margin, yPos);
+        yPos += 6;
+
+        const barangayCount = {};
+        filteredMembers.forEach((m) => {
+          barangayCount[m.barangay] = (barangayCount[m.barangay] || 0) + 1;
+        });
+
+        const barangayData = Object.entries(barangayCount).map(
+          ([barangay, count]) => [barangay, count.toString()]
+        );
+
+        doc.autoTable({
+          startY: yPos,
+          head: [["Barangay", "Count"]],
+          body: barangayData,
+          theme: "grid",
+          headStyles: { fillColor: [75, 0, 130], textColor: 255 },
+          bodyStyles: { textColor: 0 },
+          margin: { left: margin, right: margin },
+        });
+
         yPos = doc.lastAutoTable.finalY + 15;
 
         // Add page break if needed
@@ -481,7 +547,163 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
           margin: { left: margin, right: margin },
         });
 
+        yPos = doc.lastAutoTable.finalY + 10;
+
+        // Payment Methods Breakdown
+        if (filteredPayments.length > 0) {
+          doc.setFont(undefined, "bold");
+          doc.setFontSize(10);
+          doc.text("Payments by Mode", margin, yPos);
+          yPos += 6;
+
+          const paymentMethods = {};
+          filteredPayments.forEach((p) => {
+            const method = p.modePay || "Unknown";
+            if (!paymentMethods[method]) {
+              paymentMethods[method] = { count: 0, total: 0 };
+            }
+            paymentMethods[method].count++;
+            paymentMethods[method].total += parseFloat(p.amount) || 0;
+          });
+
+          const paymentMethodData = Object.entries(paymentMethods).map(
+            ([method, data]) => [
+              method,
+              data.count.toString(),
+              `₱${data.total.toLocaleString()}`,
+            ]
+          );
+
+          doc.autoTable({
+            startY: yPos,
+            head: [["Payment Mode", "Count", "Total Amount"]],
+            body: paymentMethodData,
+            theme: "grid",
+            headStyles: { fillColor: [75, 0, 130], textColor: 255 },
+            bodyStyles: { textColor: 0 },
+            margin: { left: margin, right: margin },
+          });
+
+          yPos = doc.lastAutoTable.finalY + 10;
+        }
+
+        // Add page break if needed
+        if (yPos > pageHeight - 40) {
+          doc.addPage();
+          yPos = margin;
+        }
+      }
+
+      // Charts & Graphs Section
+      if (includeSections.chartsGraphs) {
+        // Add new page for charts
+        doc.addPage();
+        yPos = margin;
+
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(12);
+        doc.text("CHARTS & GRAPHS", margin, yPos);
+        yPos += 15;
+
+        // Key Metrics Summary
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(10);
+        doc.text("Key Performance Indicators", margin, yPos);
+        yPos += 8;
+
+        const totalMembers = filteredMembers.length;
+        const maleCount = filteredMembers.filter(
+          (m) => m.gender === "Male"
+        ).length;
+        const femaleCount = filteredMembers.filter(
+          (m) => m.gender === "Female"
+        ).length;
+        const totalRevenue = filteredPayments.reduce(
+          (sum, p) => sum + (parseFloat(p.amount) || 0),
+          0
+        );
+        const totalBenefits = filteredAvailments
+          .filter((a) => a.status === "Approved")
+          .reduce((sum, a) => sum + (parseFloat(a.cashValue) || 0), 0);
+
+        const kpiData = [
+          ["Total Members", totalMembers.toString()],
+          ["Male Members", maleCount.toString()],
+          ["Female Members", femaleCount.toString()],
+          ["Total Revenue", `₱${totalRevenue.toLocaleString()}`],
+          ["Total Benefits", `₱${totalBenefits.toLocaleString()}`],
+        ];
+
+        doc.autoTable({
+          startY: yPos,
+          head: [["Metric", "Value"]],
+          body: kpiData,
+          theme: "grid",
+          headStyles: { fillColor: [75, 0, 130], textColor: 255 },
+          bodyStyles: { textColor: 0 },
+          margin: { left: margin, right: margin },
+        });
+
         yPos = doc.lastAutoTable.finalY + 15;
+
+        // Top Services
+        if (filteredAvailments.length > 0) {
+          doc.setFont(undefined, "bold");
+          doc.setFontSize(10);
+          doc.text("Top Services Availed", margin, yPos);
+          yPos += 8;
+
+          const serviceCount = {};
+          filteredAvailments.forEach((a) => {
+            if (a.status === "Approved") {
+              serviceCount[a.serviceType] =
+                (serviceCount[a.serviceType] || 0) + 1;
+            }
+          });
+
+          const topServices = Object.entries(serviceCount)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([service, count]) => [service, count.toString()]);
+
+          doc.autoTable({
+            startY: yPos,
+            head: [["Service Type", "Count"]],
+            body: topServices,
+            theme: "grid",
+            headStyles: { fillColor: [75, 0, 130], textColor: 255 },
+            bodyStyles: { textColor: 0 },
+            margin: { left: margin, right: margin },
+          });
+
+          yPos = doc.lastAutoTable.finalY + 10;
+        }
+
+        // Membership Status Summary
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(10);
+        doc.text("Membership Status Breakdown", margin, yPos);
+        yPos += 8;
+
+        const statusCount = {};
+        filteredMembers.forEach((m) => {
+          statusCount[m.status || "Active"] =
+            (statusCount[m.status || "Active"] || 0) + 1;
+        });
+
+        const statusData = Object.entries(statusCount).map(
+          ([status, count]) => [status, count.toString()]
+        );
+
+        doc.autoTable({
+          startY: yPos,
+          head: [["Status", "Count"]],
+          body: statusData,
+          theme: "grid",
+          headStyles: { fillColor: [75, 0, 130], textColor: 255 },
+          bodyStyles: { textColor: 0 },
+          margin: { left: margin, right: margin },
+        });
       }
 
       // Footer
@@ -533,7 +755,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
         return;
       }
 
-      let csvContent = "data:text/csv;charset=utf-8,";
+      let csvContent = "";
 
       // Add report metadata header
       csvContent += `ELDER EASE - COMPREHENSIVE REPORT\n`;
@@ -541,36 +763,139 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
       if (dateFrom && dateTo) {
         csvContent += `Period: ${dateFrom} to ${dateTo}\n`;
       }
-      csvContent += `Report Type: ${reportType || "General"}\n\n`;
+      csvContent += `Report Type: ${reportType || "General"}\n`;
+      csvContent += `Filter: Surname Range (${surnameStart}-${surnameEnd}), Barangay (${
+        selectedBarangay || "All"
+      }), Age Group (${selectedAgeGroup || "All"}), Status (${
+        selectedStatus || "All"
+      })\n\n`;
 
       // EXECUTIVE SUMMARY SECTION
-      csvContent += `EXECUTIVE SUMMARY\n`;
-      csvContent += `Total Members,${filteredMembers.length}\n`;
-      csvContent += `Total Payments Collected,₱${filteredPayments
-        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-        .toLocaleString()}\n`;
-      csvContent += `Total Benefits Disbursed,₱${filteredAvailments
-        .filter((a) => a.status === "Approved")
-        .reduce((sum, a) => sum + (parseFloat(a.cashValue) || 0), 0)
-        .toLocaleString()}\n\n`;
+      if (includeSections.executiveSummary) {
+        csvContent += `EXECUTIVE SUMMARY\n`;
+        const totalRevenue = filteredPayments.reduce(
+          (sum, p) => sum + (parseFloat(p.amount) || 0),
+          0
+        );
+        const totalBenefits = filteredAvailments
+          .filter((a) => a.status === "Approved")
+          .reduce((sum, a) => sum + (parseFloat(a.cashValue) || 0), 0);
 
-      // MEMBERS DATA SECTION
+        csvContent += `Total Members,${filteredMembers.length}\n`;
+        csvContent += `Total Payments Collected,₱${totalRevenue.toLocaleString()}\n`;
+        csvContent += `Total Benefits Disbursed,₱${totalBenefits.toLocaleString()}\n`;
+        csvContent += `Net Balance,₱${(
+          totalRevenue - totalBenefits
+        ).toLocaleString()}\n\n`;
+      }
+
+      // DEMOGRAPHIC SECTION
+      if (includeSections.demographic) {
+        csvContent += `DEMOGRAPHIC INFORMATION\n`;
+        const maleCount = filteredMembers.filter(
+          (m) => m.gender === "Male"
+        ).length;
+        const femaleCount = filteredMembers.filter(
+          (m) => m.gender === "Female"
+        ).length;
+
+        csvContent += `Category,Count\n`;
+        csvContent += `Total Members,${filteredMembers.length}\n`;
+        csvContent += `Male,${maleCount}\n`;
+        csvContent += `Female,${femaleCount}\n\n`;
+
+        // Age Group Breakdown
+        csvContent += `Age Group Breakdown\n`;
+        csvContent += `Age Range,Count\n`;
+        const ageGroups = {
+          "60-65": 0,
+          "66-70": 0,
+          "71-75": 0,
+          "76-80": 0,
+          "80+": 0,
+        };
+
+        filteredMembers.forEach((m) => {
+          const age = m.age || 0; // Use age field directly from database
+          if (age >= 60 && age <= 65) ageGroups["60-65"]++;
+          else if (age >= 66 && age <= 70) ageGroups["66-70"]++;
+          else if (age >= 71 && age <= 75) ageGroups["71-75"]++;
+          else if (age >= 76 && age <= 80) ageGroups["76-80"]++;
+          else if (age > 80) ageGroups["80+"]++;
+        });
+
+        Object.entries(ageGroups).forEach(([range, count]) => {
+          csvContent += `${range},${count}\n`;
+        });
+
+        // Barangay Breakdown
+        csvContent += `\nBarangay Distribution\n`;
+        csvContent += `Barangay,Count\n`;
+        const barangayCount = {};
+        filteredMembers.forEach((m) => {
+          barangayCount[m.barangay] = (barangayCount[m.barangay] || 0) + 1;
+        });
+        Object.entries(barangayCount).forEach(([barangay, count]) => {
+          csvContent += `${barangay},${count}\n`;
+        });
+        csvContent += `\n`;
+      }
+
+      // FINANCIAL SECTION
+      if (includeSections.financial) {
+        csvContent += `FINANCIAL ANALYSIS\n`;
+        const totalCollected = filteredPayments.reduce(
+          (sum, p) => sum + (parseFloat(p.amount) || 0),
+          0
+        );
+        const totalDisbursed = filteredAvailments
+          .filter((a) => a.status === "Approved")
+          .reduce((sum, a) => sum + (parseFloat(a.cashValue) || 0), 0);
+
+        csvContent += `Financial Metric,Amount\n`;
+        csvContent += `Total Collected,₱${totalCollected.toLocaleString()}\n`;
+        csvContent += `Total Disbursed,₱${totalDisbursed.toLocaleString()}\n`;
+        csvContent += `Net Balance,₱${(
+          totalCollected - totalDisbursed
+        ).toLocaleString()}\n\n`;
+
+        // Payment Methods Breakdown
+        if (filteredPayments.length > 0) {
+          csvContent += `Payments by Mode\n`;
+          csvContent += `Payment Mode,Count,Total Amount\n`;
+          const paymentMethods = {};
+          filteredPayments.forEach((p) => {
+            const method = p.modePay || "Unknown";
+            if (!paymentMethods[method]) {
+              paymentMethods[method] = { count: 0, total: 0 };
+            }
+            paymentMethods[method].count++;
+            paymentMethods[method].total += parseFloat(p.amount) || 0;
+          });
+          Object.entries(paymentMethods).forEach(([method, data]) => {
+            csvContent += `${method},${
+              data.count
+            },₱${data.total.toLocaleString()}\n`;
+          });
+          csvContent += `\n`;
+        }
+      }
+
+      // MEMBERS DATA SECTION (Always include for reference)
       csvContent += `MEMBERS DATA\n`;
       csvContent +=
         "OSCA ID,First Name,Last Name,Gender,Age,Barangay,Contact,Status,Date Created\n";
 
       filteredMembers.forEach((member) => {
-        const age = member.dateOfBirth
-          ? new Date().getFullYear() -
-            new Date(member.dateOfBirth).getFullYear()
-          : "N/A";
+        const age = member.age || "N/A"; // Use age field directly from database
+        const dateCreated = member.date_created
+          ? new Date(member.date_created).toLocaleDateString()
+          : new Date(member.dateCreated).toLocaleDateString();
         csvContent += `"${member.oscaID || ""}","${member.firstName || ""}","${
           member.lastName || ""
         }","${member.gender || ""}","${age}","${member.barangay || ""}","${
-          member.contactNumber || ""
-        }","${member.status || "Active"}","${
-          new Date(member.dateCreated).toLocaleDateString() || ""
-        }"\n`;
+          member.contactNum || member.contactNumber || ""
+        }","${member.status || "Active"}","${dateCreated || ""}"\n`;
       });
 
       csvContent += `\n`;
@@ -578,13 +903,21 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
       // PAYMENTS DATA SECTION
       if (filteredPayments.length > 0) {
         csvContent += `PAYMENTS DATA\n`;
-        csvContent += `Member ID,Amount,Date,Payment Method,Status\n`;
+        csvContent += `Member ID,Name,Amount,Date,Payment Mode,Description,Status\n`;
         filteredPayments.forEach((payment) => {
-          csvContent += `"${payment.memberId || ""}","₱${
+          const paymentDate = payment.payDate
+            ? payment.payDate.substring(0, 10) // Format: "2025-11-07T03:48" -> "2025-11-07"
+            : payment.date_created
+            ? new Date(payment.date_created).toLocaleDateString()
+            : "";
+          const memberName = `${payment.firstName || ""} ${
+            payment.lastName || ""
+          }`.trim();
+          csvContent += `"${payment.oscaID || ""}","${memberName}","₱${
             payment.amount || "0"
-          }","${new Date(payment.date).toLocaleDateString() || ""}","${
-            payment.paymentMethod || ""
-          }","${payment.status || ""}"\n`;
+          }","${paymentDate || ""}","${payment.modePay || ""}","${
+            payment.payDesc || ""
+          }","${payment.payment_status || ""}"\n`;
         });
         csvContent += `\n`;
       }
@@ -594,17 +927,29 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
         csvContent += `BENEFITS AVAILED DATA\n`;
         csvContent += `Member ID,Service Type,Cash Value,Status,Date\n`;
         filteredAvailments.forEach((availment) => {
+          const benefitDate = availment.approvalDate
+            ? new Date(availment.approvalDate).toLocaleDateString()
+            : availment.createdAt
+            ? new Date(availment.createdAt).toLocaleDateString()
+            : "";
           csvContent += `"${availment.memberId || ""}","${
             availment.serviceType || ""
-          }","₱${availment.cashValue || "0"}","${availment.status || ""}","${
-            new Date(availment.approvalDate).toLocaleDateString() || ""
-          }"\n`;
+          }","₱${availment.cashValue || "0"}","${
+            availment.status || ""
+          }","${benefitDate}"\n`;
         });
       }
 
-      const encodedUri = encodeURI(csvContent);
+      // Add UTF-8 BOM for proper character encoding
+      const BOM = "\uFEFF";
+      const csvWithBOM = BOM + csvContent;
+
+      // Create Blob with proper UTF-8 encoding
+      const blob = new Blob([csvWithBOM], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute("href", url);
       link.setAttribute(
         "download",
         `ElderEase_Report_${new Date().toISOString().split("T")[0]}.csv`
@@ -612,6 +957,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
       if (auditLogger?.logReportExported) {
         const exportId = lastGeneratedReportId || `ad-hoc-${Date.now()}`;

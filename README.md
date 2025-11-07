@@ -15,6 +15,7 @@
 - `npm install node-fetch`
 - `npm install jspdf jspdf-autotable`
 - `npm install recharts`
+- `npm install -g firebase-tools`
 
 ## 🚀 Run the Project
 

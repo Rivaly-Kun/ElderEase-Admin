@@ -172,6 +172,12 @@ const PaymentManagement = () => {
     try {
       const member = seniors.find((s) => s.oscaID === newPayment.oscaID);
 
+      // Prevent adding payments for deceased members
+      if (member?.deceased === true) {
+        alert("Cannot add payment for a deceased member.");
+        return;
+      }
+
       const paymentsRef = dbRef(db, "payments");
       const newPaymentRef = push(paymentsRef);
       const paymentId = newPaymentRef.key;
@@ -306,20 +312,159 @@ const PaymentManagement = () => {
   };
 
   const exportToCSV = () => {
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      ["OSCA ID,Name,Amount,Method,Date"]
-        .concat(
-          payments.map(
-            (p) =>
-              `${p.oscaID},${p.firstName} ${p.lastName},${p.amount},${p.modePay},${p.payDate}`
-          )
-        )
-        .join("\n");
+    const exportDate = new Date();
+    const formattedDate = exportDate.toLocaleDateString();
+    const formattedTime = exportDate.toLocaleTimeString();
+
+    // Calculate totals
+    const totalAmount = payments.reduce(
+      (sum, p) => sum + (parseFloat(p.amount) || 0),
+      0
+    );
+    const totalRecords = payments.length;
+
+    // Create header section with metadata
+    const metadata = [
+      ["ELDEREASE PAYMENT MANAGEMENT SYSTEM"],
+      ["Payment Export Report"],
+      [""],
+      [`Generated on: ${formattedDate} at ${formattedTime}`],
+      [`Total Records: ${totalRecords}`],
+      [
+        `Total Amount Collected: ₱${totalAmount.toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
+      ],
+      [""],
+      [],
+    ];
+
+    const headers = [
+      "Receipt ID",
+      "OSCA ID",
+      "First Name",
+      "Last Name",
+      "Contact Number",
+      "Amount (₱)",
+      "Payment Method",
+      "Payment Date",
+      "Payment Time",
+      "Description",
+      "Status",
+      "Authorized By",
+    ];
+
+    const rows = payments.map((p) => {
+      const paymentDateTime = p.payDate ? new Date(p.payDate) : null;
+      return [
+        p.firebaseKey || "",
+        p.oscaID || "",
+        p.firstName || "",
+        p.lastName || "",
+        p.contactNum || "",
+        parseFloat(p.amount || 0).toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }),
+        p.modePay || "",
+        paymentDateTime ? paymentDateTime.toLocaleDateString() : "",
+        paymentDateTime ? paymentDateTime.toLocaleTimeString() : "",
+        p.payDesc || "Annual Dues",
+        p.payment_status || "Paid",
+        p.authorAgent || "Unknown",
+      ];
+    });
+
+    // Add summary section
+    const summaryRows = [
+      [],
+      ["PAYMENT METHOD SUMMARY"],
+      ["Payment Method", "Count", "Total Amount"],
+      ...Object.entries(
+        payments.reduce((acc, p) => {
+          const method = p.modePay || "Unknown";
+          if (!acc[method]) {
+            acc[method] = { count: 0, total: 0 };
+          }
+          acc[method].count += 1;
+          acc[method].total += parseFloat(p.amount) || 0;
+          return acc;
+        }, {})
+      ).map(([method, data]) => [
+        method,
+        data.count,
+        `₱${data.total.toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
+      ]),
+      [],
+      ["STATUS SUMMARY"],
+      ["Status", "Count", "Total Amount"],
+      ...Object.entries(
+        payments.reduce((acc, p) => {
+          const status = p.payment_status || "Unknown";
+          if (!acc[status]) {
+            acc[status] = { count: 0, total: 0 };
+          }
+          acc[status].count += 1;
+          acc[status].total += parseFloat(p.amount) || 0;
+          return acc;
+        }, {})
+      ).map(([status, data]) => [
+        status,
+        data.count,
+        `₱${data.total.toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
+      ]),
+    ];
+
+    // Combine all sections
+    const allRows = [...metadata, headers, ...rows, ...summaryRows];
+
+    // Create CSV content with proper quoting
+    const csvContent = allRows
+      .map((row) =>
+        row
+          .map((cell) => {
+            const cellStr = String(cell);
+            // Quote cells containing commas, quotes, or newlines
+            if (
+              cellStr.includes(",") ||
+              cellStr.includes('"') ||
+              cellStr.includes("\n") ||
+              cellStr.includes("₱")
+            ) {
+              return `"${cellStr.replace(/"/g, '""')}"`;
+            }
+            return cellStr;
+          })
+          .join(",")
+      )
+      .join("\n");
+
+    // Create blob with BOM for proper UTF-8 encoding (especially for ñ, é, etc.)
+    const blob = new Blob(["\ufeff" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
     const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = "payments_report.csv";
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `ElderEase_Payments_${new Date().toISOString().slice(0, 10)}_${new Date()
+        .toISOString()
+        .slice(11, 16)
+        .replace(":", "")}.csv`
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Handle member search input
@@ -333,9 +478,14 @@ const PaymentManagement = () => {
       return;
     }
 
-    // Search members by name or OSCA ID
+    // Search members by name or OSCA ID (exclude deceased)
     const results = allMembers
       .filter((member) => {
+        // Exclude deceased members
+        if (member.deceased === true) {
+          return false;
+        }
+
         const fullName = `${member.firstName || ""} ${
           member.lastName || ""
         }`.toLowerCase();
@@ -412,13 +562,18 @@ const PaymentManagement = () => {
 
         <main className="flex-1 overflow-y-auto p-8">
           {/* Header Section */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">
-              Payment Management
-            </h1>
-            <p className="text-gray-600">
-              Track, manage, and process all payment transactions
-            </p>
+          <div className="mb-8 flex items-center gap-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl flex items-center justify-center">
+              <DollarSign className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">
+                Payment Management
+              </h1>
+              <p className="text-gray-600">
+                Track, manage, and process all payment transactions
+              </p>
+            </div>
           </div>
 
           {/* Enhanced Summary Cards */}
@@ -822,15 +977,20 @@ const PaymentManagement = () => {
                   {showSearchDropdown && searchUser.trim() !== "" && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-purple-200 rounded-xl shadow-xl z-20 max-h-64 overflow-y-auto">
                       {seniors
-                        .filter(
-                          (s) =>
+                        .filter((s) => {
+                          // Exclude deceased members
+                          if (s.deceased === true) {
+                            return false;
+                          }
+                          return (
                             `${s.firstName} ${s.lastName}`
                               .toLowerCase()
                               .includes(searchUser.toLowerCase()) ||
                             String(s.oscaID)
                               .toLowerCase()
                               .includes(searchUser.toLowerCase())
-                        )
+                          );
+                        })
                         .slice(0, 8)
                         .map((s) => (
                           <button

@@ -11,6 +11,8 @@ import {
   Mail,
   CheckCircle,
   AlertCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { createAuditLogger } from "../utils/AuditLogger";
 
@@ -30,6 +32,8 @@ const OfficerManagement = ({ currentUser }) => {
     password: "",
     confirmPassword: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const actorId = currentUser?.uid || currentUser?.id || "unknown";
   const actorLabel =
@@ -40,6 +44,41 @@ const OfficerManagement = ({ currentUser }) => {
     "Unknown";
 
   const auditLogger = createAuditLogger(actorId, actorLabel, currentUser?.role);
+
+  const checkPasswordStrength = (password) => {
+    if (!password) return { strength: 0, label: "No password", color: "gray" };
+
+    let strength = 0;
+    const checks = {
+      length: password.length >= 8,
+      uppercase: /[A-Z]/.test(password),
+      lowercase: /[a-z]/.test(password),
+      numbers: /\d/.test(password),
+      special: /[!@#$%^&*()_+=\-[\]{};':"\\|,.<>/?]/.test(password),
+    };
+
+    if (checks.length) strength += 20;
+    if (checks.uppercase) strength += 20;
+    if (checks.lowercase) strength += 20;
+    if (checks.numbers) strength += 20;
+    if (checks.special) strength += 20;
+
+    let label = "Weak";
+    let color = "bg-red-500";
+
+    if (strength >= 80) {
+      label = "Strong";
+      color = "bg-green-500";
+    } else if (strength >= 60) {
+      label = "Good";
+      color = "bg-yellow-500";
+    } else if (strength >= 40) {
+      label = "Fair";
+      color = "bg-orange-500";
+    }
+
+    return { strength, label, color, checks };
+  };
 
   const sanitizeStatus = (value) =>
     String(value ?? "active").toLowerCase() === "active"
@@ -469,9 +508,22 @@ const OfficerManagement = ({ currentUser }) => {
                       }
                       className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-900"
                     >
-                      <option value="Admin">Admin</option>
-                      <option value="Officer">Officer</option>
-                      <option value="Viewer">Viewer</option>
+                      {roles.length > 0 ? (
+                        roles.map((role) => (
+                          <option
+                            key={role.id || role.roleName || role.name}
+                            value={role.id || role.roleName || role.name}
+                          >
+                            {role.roleName || role.name || role.id}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="Admin">Admin</option>
+                          <option value="Officer">Officer</option>
+                          <option value="Viewer">Viewer</option>
+                        </>
+                      )}
                     </select>
                   </td>
 
@@ -622,9 +674,22 @@ const OfficerManagement = ({ currentUser }) => {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  <option value="Officer">Officer</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Viewer">Viewer</option>
+                  {roles.length > 0 ? (
+                    roles.map((role) => (
+                      <option
+                        key={role.id || role.roleName || role.name}
+                        value={role.id || role.roleName || role.name}
+                      >
+                        {role.roleName || role.name || role.id}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="Officer">Officer</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Viewer">Viewer</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -664,37 +729,163 @@ const OfficerManagement = ({ currentUser }) => {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   {editingOfficer ? "New Password" : "Password"}
                 </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData({ ...formData, password: e.target.value })
-                  }
-                  placeholder={
-                    editingOfficer
-                      ? "Leave blank to keep current password"
-                      : "At least 6 characters"
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) =>
+                      setFormData({ ...formData, password: e.target.value })
+                    }
+                    placeholder={
+                      editingOfficer
+                        ? "Leave blank to keep current password"
+                        : "At least 6 characters"
+                    }
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {formData.password && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-600">
+                        Password Strength
+                      </span>
+                      <span
+                        className={`text-xs font-bold px-2 py-1 rounded ${
+                          checkPasswordStrength(formData.password).color ===
+                          "bg-green-500"
+                            ? "bg-green-100 text-green-700"
+                            : checkPasswordStrength(formData.password).color ===
+                              "bg-yellow-500"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : checkPasswordStrength(formData.password).color ===
+                              "bg-orange-500"
+                            ? "bg-orange-100 text-orange-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {checkPasswordStrength(formData.password).label}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${
+                          checkPasswordStrength(formData.password).color
+                        }`}
+                        style={{
+                          width: `${
+                            checkPasswordStrength(formData.password).strength
+                          }%`,
+                        }}
+                      ></div>
+                    </div>
+                    <div className="text-xs text-gray-600 mt-2 space-y-1">
+                      <div
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(formData.password).checks.length
+                            ? "text-green-600"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        <CheckCircle size={14} />
+                        At least 8 characters
+                      </div>
+                      <div
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(formData.password).checks
+                            .uppercase
+                            ? "text-green-600"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        <CheckCircle size={14} />
+                        One uppercase letter (A-Z)
+                      </div>
+                      <div
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(formData.password).checks
+                            .lowercase
+                            ? "text-green-600"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        <CheckCircle size={14} />
+                        One lowercase letter (a-z)
+                      </div>
+                      <div
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(formData.password).checks
+                            .numbers
+                            ? "text-green-600"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        <CheckCircle size={14} />
+                        One number (0-9)
+                      </div>
+                      <div
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(formData.password).checks
+                            .special
+                            ? "text-green-600"
+                            : "text-gray-400"
+                        }`}
+                      >
+                        <CheckCircle size={14} />
+                        One special character (!@#$%^&* etc.)
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Confirm Password
+                  {formData.password &&
+                    formData.confirmPassword &&
+                    (formData.password === formData.confirmPassword ? (
+                      <span className="ml-2 text-green-600 text-xs font-bold">
+                        ✓ Passwords match
+                      </span>
+                    ) : (
+                      <span className="ml-2 text-red-600 text-xs font-bold">
+                        ✗ Passwords don't match
+                      </span>
+                    ))}
                 </label>
-                <input
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      confirmPassword: e.target.value,
-                    })
-                  }
-                  placeholder="Re-enter password"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        confirmPassword: e.target.value,
+                      })
+                    }
+                    placeholder="Re-enter password"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff size={18} />
+                    ) : (
+                      <Eye size={18} />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div>

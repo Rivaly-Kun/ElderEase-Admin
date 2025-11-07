@@ -335,9 +335,12 @@ const ServiceAndBenefitsTrack = () => {
       return;
     }
 
-    // Search members by name or OSCA ID
+    // Search members by name or OSCA ID, excluding deceased and archived
     const results = seniors
       .filter((s) => {
+        // Exclude deceased and archived members
+        if (s.deceased || s.archived) return false;
+
         const fullName = `${s.firstName || ""} ${
           s.lastName || ""
         }`.toLowerCase();
@@ -563,15 +566,20 @@ const ServiceAndBenefitsTrack = () => {
         <Header notificationCount={3} />
 
         <main className="flex-1 overflow-y-auto p-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">
-              Benefit Tracking
-            </h1>
-            <p className="text-gray-600">
-              Monitor services availed and benefits distributed to senior
-              citizens
-            </p>
+          {/* Header with Logo */}
+          <div className="mb-8 flex items-center gap-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl flex items-center justify-center">
+              <Package className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">
+                Benefit Tracking
+              </h1>
+              <p className="text-gray-600">
+                Monitor services availed and benefits distributed to senior
+                citizens
+              </p>
+            </div>
           </div>
 
           {/* Tab Navigation */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { BarChart3, FileText, Clock, Zap } from "lucide-react";
+import { BarChart3, FileText, Clock, Zap, BarChart } from "lucide-react";
 import Sidebar from "../Components/Sidebar";
 import Header from "../Components/Header";
 import ReportingAnalytics from "../Components/ReportingAnalytics";
@@ -51,14 +51,19 @@ const DynamicReportingSystem = () => {
         <Header notificationCount={3} />
 
         <main className="flex-1 overflow-y-auto p-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">
-              Dynamic Reporting System
-            </h1>
-            <p className="text-gray-600">
-              Generate comprehensive reports and analytics for Elder Ease
-            </p>
+          {/* Header with Logo */}
+          <div className="mb-8 flex items-center gap-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
+              <BarChart className="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">
+                Dynamic Reporting System
+              </h1>
+              <p className="text-gray-600">
+                Generate comprehensive reports and analytics for Elder Ease
+              </p>
+            </div>
           </div>
 
           {/* Tab Navigation */}

@@ -10,6 +10,7 @@ import {
   X,
   Edit2,
   Eye,
+  ChevronDown,
 } from "lucide-react";
 import { ref as dbRef, onValue } from "firebase/database";
 import { db } from "../services/firebase";
@@ -91,6 +92,12 @@ const DocumentManagement = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [barangayFilter, setBarangayFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    Active: true,
+    Archived: true,
+    Deceased: true,
+  });
 
   const { currentUser, loading: currentUserLoading } = useResolvedCurrentUser();
 
@@ -232,6 +239,28 @@ const DocumentManagement = () => {
     });
   }, [members, searchQuery, barangayFilter, statusFilter]);
 
+  // Group filtered members by status
+  const membersByStatus = useMemo(() => {
+    const grouped = {
+      Active: [],
+      Archived: [],
+      Deceased: [],
+    };
+
+    filteredMembers.forEach((member) => {
+      const status = getMemberStatus(member);
+      if (status === "Archived") {
+        grouped.Archived.push(member);
+      } else if (status === "Deceased") {
+        grouped.Deceased.push(member);
+      } else {
+        grouped.Active.push(member);
+      }
+    });
+
+    return grouped;
+  }, [filteredMembers]);
+
   const handleOpenDocumentManager = (member) => {
     setSelectedMember(member);
     setShowDocumentModal(true);
@@ -241,6 +270,76 @@ const DocumentManagement = () => {
     setSearchQuery("");
     setBarangayFilter("");
     setStatusFilter("");
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Re-fetch members data
+      const membersRef = dbRef(db, "members");
+      const categoriesRef = dbRef(db, "documentCategories");
+      const memberDocumentsRef = dbRef(db, "memberDocuments");
+
+      await Promise.all([
+        new Promise((resolve) => {
+          onValue(membersRef, (snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.val();
+              const membersList = Object.keys(data).map((key) => ({
+                firebaseKey: key,
+                ...data[key],
+              }));
+              setMembers(membersList);
+            } else {
+              setMembers([]);
+            }
+            resolve();
+          });
+        }),
+        new Promise((resolve) => {
+          onValue(categoriesRef, (snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.val();
+              const categoriesList = Object.keys(data).map((key) => ({
+                key,
+                ...data[key],
+              }));
+              setCategories(categoriesList);
+            } else {
+              setCategories([]);
+            }
+            resolve();
+          });
+        }),
+        new Promise((resolve) => {
+          onValue(memberDocumentsRef, (snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.val();
+              const counts = {};
+              Object.entries(data).forEach(([memberKey, documents]) => {
+                if (documents && typeof documents === "object") {
+                  counts[memberKey] = Object.keys(documents).length;
+                } else {
+                  counts[memberKey] = 0;
+                }
+              });
+              setDocumentCounts(counts);
+            } else {
+              setDocumentCounts({});
+            }
+            resolve();
+          });
+        }),
+      ]);
+
+      // Show success feedback
+      alert("✅ Document Manager refreshed successfully!");
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+      alert("❌ Error refreshing data. Please try again.");
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   if (currentUserLoading) {
@@ -277,14 +376,20 @@ const DocumentManagement = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowCategoryModal(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
               >
                 <Upload className="w-4 h-4" />
                 Manage Categories
               </button>
-              <button className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-2">
-                <RefreshCw className="w-4 h-4" />
-                Refresh
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+                />
+                {refreshing ? "Refreshing..." : "Refresh"}
               </button>
             </div>
           </div>
@@ -334,137 +439,389 @@ const DocumentManagement = () => {
             {/* Reset Button */}
             <button
               onClick={handleResetFilters}
-              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
             >
               Reset Filters
             </button>
           </div>
 
-          {/* Table */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            {membersLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin">
-                  <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full"></div>
-                </div>
+          {/* Tables by Status */}
+          {membersLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin">
+                <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full"></div>
               </div>
-            ) : filteredMembers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-                <FileText className="w-12 h-12 mb-4 text-gray-300" />
-                <p className="text-lg font-medium">
-                  No members match your search criteria
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Member Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        OSCA ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Barangay
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Contact
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Documents
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wide">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredMembers.map((member) => {
-                      const key = getMemberKey(member);
-                      const status = getMemberStatus(member);
-                      const statusClass =
-                        status === "Active"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : status === "Archived"
-                          ? "bg-slate-100 text-slate-700"
-                          : status === "Deceased"
-                          ? "bg-rose-100 text-rose-700"
-                          : "bg-blue-100 text-blue-700";
-                      const profileImage = getMemberAvatar(member);
-                      const documentTotal =
-                        typeof documentCounts[key] === "number"
-                          ? documentCounts[key]
-                          : getDocumentCount(member);
+            </div>
+          ) : filteredMembers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+              <FileText className="w-12 h-12 mb-4 text-gray-300" />
+              <p className="text-lg font-medium">
+                No members match your search criteria
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* ACTIVE MEMBERS SECTION */}
+              {membersByStatus.Active.length > 0 && (
+                <div className="border border-emerald-200 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() =>
+                      setExpandedSections((prev) => ({
+                        ...prev,
+                        Active: !prev.Active,
+                      }))
+                    }
+                    className="w-full px-6 py-4 bg-emerald-50 border-b-2 border-emerald-200 hover:bg-emerald-100 transition flex items-center justify-between"
+                  >
+                    <h3 className="text-lg font-bold text-emerald-900 flex items-center gap-2">
+                      <span className="w-3 h-3 bg-emerald-600 rounded-full"></span>
+                      Active Members ({membersByStatus.Active.length})
+                    </h3>
+                    <ChevronDown
+                      className={`w-5 h-5 text-emerald-900 transition-transform ${
+                        expandedSections.Active ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {expandedSections.Active && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Member Name
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              OSCA ID
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Barangay
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Contact
+                            </th>
+                            <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Documents
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {membersByStatus.Active.map((member) => {
+                            const key = getMemberKey(member);
+                            const profileImage = getMemberAvatar(member);
+                            const documentTotal =
+                              typeof documentCounts[key] === "number"
+                                ? documentCounts[key]
+                                : getDocumentCount(member);
 
-                      return (
-                        <tr key={key} className="hover:bg-gray-50 transition">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              {profileImage ? (
-                                <img
-                                  src={profileImage}
-                                  alt={`${member.firstName || ""} ${
-                                    member.lastName || ""
-                                  }`}
-                                  className="h-10 w-10 rounded-full object-cover"
-                                />
-                              ) : (
-                                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 text-sm font-semibold text-purple-600">
-                                  {getMemberInitials(member)}
-                                </span>
-                              )}
-                              <div>
-                                <p className="text-sm font-semibold text-gray-900">
-                                  {member.firstName || ""}{" "}
-                                  {member.lastName || ""}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {member.address || "N/A"}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">
-                            {member.oscaID || ""}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">
-                            {member.barangay || ""}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">
-                            {member.contactNum || ""}
-                          </td>
-                          <td className="px-6 py-4 text-center text-sm font-semibold text-purple-600">
-                            {documentTotal}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}
-                            >
-                              {status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => handleOpenDocumentManager(member)}
-                              className="inline-flex items-center justify-center rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 transition"
-                            >
-                              <Eye className="w-4 h-4 mr-2" />
-                              Manage Documents
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                            return (
+                              <tr
+                                key={key}
+                                className="hover:bg-gray-50 transition"
+                              >
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                    {profileImage ? (
+                                      <img
+                                        src={profileImage}
+                                        alt={`${member.firstName || ""} ${
+                                          member.lastName || ""
+                                        }`}
+                                        className="h-10 w-10 rounded-full object-cover"
+                                      />
+                                    ) : (
+                                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 text-sm font-semibold text-purple-600">
+                                        {getMemberInitials(member)}
+                                      </span>
+                                    )}
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">
+                                        {member.firstName || ""}{" "}
+                                        {member.lastName || ""}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {member.address || "N/A"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.oscaID || ""}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.barangay || ""}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.contactNum || ""}
+                                </td>
+                                <td className="px-6 py-4 text-center text-sm font-semibold text-purple-600">
+                                  {documentTotal}
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <button
+                                    onClick={() =>
+                                      handleOpenDocumentManager(member)
+                                    }
+                                    className="inline-flex items-center justify-center rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 transition"
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    Manage
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ARCHIVED MEMBERS SECTION */}
+              {membersByStatus.Archived.length > 0 && (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() =>
+                      setExpandedSections((prev) => ({
+                        ...prev,
+                        Archived: !prev.Archived,
+                      }))
+                    }
+                    className="w-full px-6 py-4 bg-slate-50 border-b-2 border-slate-200 hover:bg-slate-100 transition flex items-center justify-between"
+                  >
+                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                      <span className="w-3 h-3 bg-slate-600 rounded-full"></span>
+                      Archived Members ({membersByStatus.Archived.length})
+                    </h3>
+                    <ChevronDown
+                      className={`w-5 h-5 text-slate-900 transition-transform ${
+                        expandedSections.Archived ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {expandedSections.Archived && (
+                    <div className="overflow-x-auto opacity-60">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Member Name
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              OSCA ID
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Barangay
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Contact
+                            </th>
+                            <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Documents
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {membersByStatus.Archived.map((member) => {
+                            const key = getMemberKey(member);
+                            const profileImage = getMemberAvatar(member);
+                            const documentTotal =
+                              typeof documentCounts[key] === "number"
+                                ? documentCounts[key]
+                                : getDocumentCount(member);
+
+                            return (
+                              <tr
+                                key={key}
+                                className="hover:bg-gray-50 transition"
+                              >
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                    {profileImage ? (
+                                      <img
+                                        src={profileImage}
+                                        alt={`${member.firstName || ""} ${
+                                          member.lastName || ""
+                                        }`}
+                                        className="h-10 w-10 rounded-full object-cover opacity-60"
+                                      />
+                                    ) : (
+                                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-600">
+                                        {getMemberInitials(member)}
+                                      </span>
+                                    )}
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">
+                                        {member.firstName || ""}{" "}
+                                        {member.lastName || ""}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {member.address || "N/A"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.oscaID || ""}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.barangay || ""}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.contactNum || ""}
+                                </td>
+                                <td className="px-6 py-4 text-center text-sm font-semibold text-purple-600">
+                                  {documentTotal}
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <button
+                                    onClick={() =>
+                                      handleOpenDocumentManager(member)
+                                    }
+                                    className="inline-flex items-center justify-center rounded-full bg-slate-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-700 transition"
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    Manage
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* DECEASED MEMBERS SECTION */}
+              {membersByStatus.Deceased.length > 0 && (
+                <div className="border border-rose-200 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() =>
+                      setExpandedSections((prev) => ({
+                        ...prev,
+                        Deceased: !prev.Deceased,
+                      }))
+                    }
+                    className="w-full px-6 py-4 bg-rose-50 border-b-2 border-rose-200 hover:bg-rose-100 transition flex items-center justify-between"
+                  >
+                    <h3 className="text-lg font-bold text-rose-900 flex items-center gap-2">
+                      <span className="w-3 h-3 bg-rose-600 rounded-full"></span>
+                      Deceased Members ({membersByStatus.Deceased.length})
+                    </h3>
+                    <ChevronDown
+                      className={`w-5 h-5 text-rose-900 transition-transform ${
+                        expandedSections.Deceased ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {expandedSections.Deceased && (
+                    <div className="overflow-x-auto opacity-75">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Member Name
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              OSCA ID
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Barangay
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Contact
+                            </th>
+                            <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Documents
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {membersByStatus.Deceased.map((member) => {
+                            const key = getMemberKey(member);
+                            const profileImage = getMemberAvatar(member);
+                            const documentTotal =
+                              typeof documentCounts[key] === "number"
+                                ? documentCounts[key]
+                                : getDocumentCount(member);
+
+                            return (
+                              <tr
+                                key={key}
+                                className="hover:bg-gray-50 transition opacity-75"
+                              >
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                    {profileImage ? (
+                                      <img
+                                        src={profileImage}
+                                        alt={`${member.firstName || ""} ${
+                                          member.lastName || ""
+                                        }`}
+                                        className="h-10 w-10 rounded-full object-cover grayscale opacity-60"
+                                      />
+                                    ) : (
+                                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-rose-200 text-sm font-semibold text-rose-600">
+                                        {getMemberInitials(member)}
+                                      </span>
+                                    )}
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">
+                                        {member.firstName || ""}{" "}
+                                        {member.lastName || ""}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {member.address || "N/A"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.oscaID || ""}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.barangay || ""}
+                                </td>
+                                <td className="px-6 py-4 text-sm text-gray-600">
+                                  {member.contactNum || ""}
+                                </td>
+                                <td className="px-6 py-4 text-center text-sm font-semibold text-purple-600">
+                                  {documentTotal}
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <button
+                                    onClick={() =>
+                                      handleOpenDocumentManager(member)
+                                    }
+                                    className="inline-flex items-center justify-center rounded-full bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-rose-700 transition"
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    Manage
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </main>
       </div>
 

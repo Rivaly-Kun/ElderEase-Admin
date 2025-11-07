@@ -256,6 +256,154 @@ const SeniorCitizenManagement = () => {
 
   const isDeceased = (member) => member.deceased === true;
 
+  // CSV Export Handler
+  const handleExportCSV = () => {
+    const exportDate = new Date();
+    const formattedDate = exportDate.toLocaleDateString();
+    const formattedTime = exportDate.toLocaleTimeString();
+
+    // Calculate statistics
+    const totalMembers = filteredMembers.length;
+    const activeMembersCount = filteredMembers.filter(
+      (m) => !m.archived && !isDeceased(m)
+    ).length;
+    const archivedMembersCount = filteredMembers.filter(
+      (m) => m.archived && !isDeceased(m)
+    ).length;
+    const deceasedMembersCount = filteredMembers.filter((m) =>
+      isDeceased(m)
+    ).length;
+
+    // Create header section with metadata
+    const metadata = [
+      ["ELDEREASE SENIOR CITIZEN MANAGEMENT SYSTEM"],
+      ["Member Export Report"],
+      [""],
+      [`Generated on: ${formattedDate} at ${formattedTime}`],
+      [
+        `Report Type: ${
+          activeTab.charAt(0).toUpperCase() + activeTab.slice(1)
+        } Members`,
+      ],
+      [`Total Records: ${totalMembers}`],
+      [""],
+      [],
+    ];
+
+    const headers = [
+      "First Name",
+      "Last Name",
+      "OSCA ID",
+      "Age",
+      "Gender",
+      "Contact Number",
+      "Barangay",
+      "Full Address",
+      "Status",
+      "Date Created",
+    ];
+
+    const rows = filteredMembers.map((member) => {
+      const status = isDeceased(member)
+        ? "Deceased"
+        : member.archived
+        ? "Archived"
+        : "Active";
+
+      return [
+        member.firstName || "",
+        member.lastName || "",
+        member.oscaID || "",
+        member.age || "",
+        member.gender || "",
+        member.contactNum || "",
+        extractBarangay(member.address) || "N/A",
+        member.address || "",
+        status,
+        member.date_created
+          ? new Date(member.date_created).toLocaleDateString()
+          : "",
+      ];
+    });
+
+    // Add summary section
+    const summaryRows = [
+      [],
+      ["MEMBER STATUS SUMMARY"],
+      ["Status", "Count"],
+      ["Active", activeMembersCount],
+      ["Archived", archivedMembersCount],
+      ["Deceased", deceasedMembersCount],
+      [],
+      ["GENDER DISTRIBUTION"],
+      ["Gender", "Count"],
+      ...Object.entries(
+        filteredMembers.reduce((acc, m) => {
+          const gender = m.gender || "Not Specified";
+          acc[gender] = (acc[gender] || 0) + 1;
+          return acc;
+        }, {})
+      ).map(([gender, count]) => [gender, count]),
+      [],
+      ["AGE GROUP DISTRIBUTION"],
+      ["Age Group", "Count"],
+      [
+        "60-69",
+        filteredMembers.filter((m) => m.age >= 60 && m.age <= 69).length,
+      ],
+      [
+        "70-79",
+        filteredMembers.filter((m) => m.age >= 70 && m.age <= 79).length,
+      ],
+      ["80+", filteredMembers.filter((m) => m.age >= 80).length],
+    ];
+
+    // Combine all sections
+    const allRows = [...metadata, headers, ...rows, ...summaryRows];
+
+    // Create CSV content with proper quoting
+    const csvContent = allRows
+      .map((row) =>
+        row
+          .map((cell) => {
+            const cellStr = String(cell);
+            // Quote cells containing commas, quotes, or newlines
+            if (
+              cellStr.includes(",") ||
+              cellStr.includes('"') ||
+              cellStr.includes("\n")
+            ) {
+              return `"${cellStr.replace(/"/g, '""')}"`;
+            }
+            return cellStr;
+          })
+          .join(",")
+      )
+      .join("\n");
+
+    // Create blob and download
+    const blob = new Blob(["\ufeff" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `ElderEase_Citizens_${activeTab}_${new Date()
+        .toISOString()
+        .slice(0, 10)}_${new Date()
+        .toISOString()
+        .slice(11, 16)
+        .replace(":", "")}.csv`
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Filter logic
   const filteredMembers = members.filter((member) => {
     const matchesTab =
@@ -392,6 +540,43 @@ const SeniorCitizenManagement = () => {
     }
   };
 
+  // ✅ Restore deceased member to active
+  const handleRestoreFromDeceased = async (member) => {
+    if (
+      window.confirm(
+        `Restore ${member.firstName} ${member.lastName} to active status?`
+      )
+    ) {
+      try {
+        const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+        await update(memberRef, {
+          deceased: false,
+          archived: false,
+          date_updated: new Date().toISOString(),
+          updatedBy: actorLabel,
+          updatedById: actorId,
+          lastActionByRole: actorRole,
+        });
+        const memberName = `${member.firstName || ""} ${
+          member.lastName || ""
+        }`.trim();
+        await auditLogger.logAction(
+          "RESTORE_FROM_DECEASED",
+          "Senior Citizens",
+          {
+            recordId: member.firebaseKey,
+            recordName: memberName || member.oscaID || member.firebaseKey,
+          }
+        );
+        setActiveTab("active");
+        alert("Member restored to active status.");
+      } catch (err) {
+        console.error("Error restoring member:", err);
+        alert("Failed to restore member.");
+      }
+    }
+  };
+
   if (currentUserLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -438,42 +623,53 @@ const SeniorCitizenManagement = () => {
                 <Camera className="w-4 h-4" />
                 Scan QR
               </button>
-              <button className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-2"
+              >
                 <Printer className="w-4 h-4" />
-                Print
+                Export CSV
               </button>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex items-center gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
             {[
               { key: "active", label: "Active Members" },
               { key: "archived", label: "Archived" },
               { key: "deceased", label: "Deceased" },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-6 py-2 rounded-lg font-medium transition ${
-                  activeTab === tab.key
-                    ? "bg-purple-600 text-white"
-                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-                }`}
-              >
-                {tab.label} (
-                {
-                  members.filter((m) =>
-                    tab.key === "active"
-                      ? !m.archived && !isDeceased(m)
-                      : tab.key === "archived"
-                      ? m.archived === true && !isDeceased(m)
-                      : isDeceased(m)
-                  ).length
-                }
-                )
-              </button>
-            ))}
+            ].map((tab) => {
+              const count = members.filter((m) =>
+                tab.key === "active"
+                  ? !m.archived && !isDeceased(m)
+                  : tab.key === "archived"
+                  ? m.archived === true && !isDeceased(m)
+                  : isDeceased(m)
+              ).length;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-6 py-4 rounded-xl font-semibold transition shadow-sm border ${
+                    activeTab === tab.key
+                      ? "bg-purple-600 text-white border-purple-600"
+                      : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-sm font-bold ml-2 ${
+                        activeTab === tab.key ? "text-white" : "text-purple-600"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* Filters */}
@@ -535,9 +731,10 @@ const SeniorCitizenManagement = () => {
                 setSelectedAgeRange("");
                 setSelectedStatus("");
               }}
-              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 transition"
+              className="px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-semibold hover:bg-red-200 transition flex items-center gap-2"
             >
-              Reset
+              <RefreshCw className="w-4 h-4" />
+              Reset Filters
             </button>
           </div>
 
@@ -685,6 +882,18 @@ const SeniorCitizenManagement = () => {
                                 </button>
                               )}
 
+                              {member.deceased && (
+                                <button
+                                  onClick={() =>
+                                    handleRestoreFromDeceased(member)
+                                  }
+                                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
+                                  title="Restore to Active"
+                                >
+                                  <RefreshCw className="w-4 h-4" />
+                                </button>
+                              )}
+
                               <button
                                 onClick={() => handleDeleteMember(member)}
                                 className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -716,6 +925,15 @@ const SeniorCitizenManagement = () => {
           isDeceased={isDeceased}
           extractBarangay={extractBarangay}
           onMemberFound={(member) => {
+            // Guard: Check if member is archived or deceased
+            if (member.archived || isDeceased(member)) {
+              alert(
+                `To access this account, the member must be active. Current status: ${
+                  isDeceased(member) ? "Deceased" : "Archived"
+                }`
+              );
+              return;
+            }
             console.log("📱 Opening profile modal for:", member);
             memberSearch.openMemberProfile(member);
           }}
