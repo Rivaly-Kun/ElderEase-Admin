@@ -156,6 +156,33 @@ const ReportingAnalytics = () => {
       .slice(0, 10);
   };
 
+  // Calculate Gender Distribution
+  const getGenderDistribution = () => {
+    const genderData = {
+      Male: 0,
+      Female: 0,
+      Other: 0,
+    };
+
+    members.forEach((member) => {
+      const gender = member.gender || member.sex || "Other";
+      if (
+        gender.toLowerCase().includes("male") &&
+        !gender.toLowerCase().includes("female")
+      ) {
+        genderData.Male += 1;
+      } else if (gender.toLowerCase().includes("female")) {
+        genderData.Female += 1;
+      } else {
+        genderData.Other += 1;
+      }
+    });
+
+    return Object.entries(genderData)
+      .filter(([_, value]) => value > 0)
+      .map(([name, value]) => ({ name, value }));
+  };
+
   // Calculate Payment Collection Trends
   const getPaymentTrends = () => {
     const monthData = {};
@@ -218,6 +245,7 @@ const ReportingAnalytics = () => {
   const membershipTrends = getMembershipTrends();
   const ageDemographics = getAgeDemographics();
   const purokData = getPurokDistribution();
+  const genderData = getGenderDistribution();
   const paymentTrends = getPaymentTrends();
   const financial = getFinancialSummary();
   const services = getServiceSummary();
@@ -388,26 +416,36 @@ const ReportingAnalytics = () => {
               )}
             </div>
 
-            {/* Payment Collection Trends */}
+            {/* Gender Distribution */}
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h3 className="text-xl font-bold text-gray-900 mb-4">
-                Payment Collection Trends
+                Gender Distribution
               </h3>
-              {paymentTrends.length > 0 ? (
+              {genderData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={paymentTrends}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip
-                      formatter={(value) => `₱${value.toLocaleString()}`}
-                    />
-                    <Bar
-                      dataKey="amount"
-                      fill="#10b981"
-                      radius={[8, 8, 0, 0]}
-                    />
-                  </BarChart>
+                  <PieChart>
+                    <Pie
+                      data={genderData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) =>
+                        `${name}: ${(percent * 100).toFixed(0)}%`
+                      }
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {genderData.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
                 </ResponsiveContainer>
               ) : (
                 <p className="text-gray-500 text-center py-12">

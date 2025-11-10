@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { NAVIGATION_MODULES } from "../utils/navigationConfig";
 import { useAuth } from "../Context/AuthContext";
-import { LogOut } from "lucide-react";
+import { LogOut, AlertCircle } from "lucide-react";
 
 const Sidebar = ({ activeMenu, setActiveMenu }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, hasModuleAccess, isSuperAdmin, logout } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const accessibleMenuItems = useMemo(() => {
     return NAVIGATION_MODULES.filter((item) =>
@@ -116,17 +117,57 @@ const Sidebar = ({ activeMenu, setActiveMenu }) => {
       {/* === Logout Button === */}
       <div className="px-3 py-4 border-t border-gray-100">
         <button
-          onClick={() => {
-            logout();
-            // Force a full page reload to clear all state
-            window.location.href = "/";
-          }}
+          onClick={() => setShowLogoutConfirm(true)}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors duration-150"
         >
           <LogOut className="w-4 h-4" />
           Logout
         </button>
       </div>
+
+      {/* === Logout Confirmation Modal === */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border-l-4 border-red-600 z-[10000]">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  <AlertCircle className="w-8 h-8 text-red-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">
+                    Confirm Logout
+                  </h3>
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    Are you sure you want to logout? You'll need to log in again
+                    to access your account.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowLogoutConfirm(false);
+                    logout();
+                    setTimeout(() => {
+                      window.location.href = "/";
+                    }, 300);
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

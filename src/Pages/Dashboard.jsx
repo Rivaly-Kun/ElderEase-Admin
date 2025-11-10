@@ -405,66 +405,34 @@ const Dashboard = () => {
         setMembershipTrends(trendsData);
 
         // === Members by Purok ===
-        const purokList = [
-          "Purok Catleya",
-          "Purok Jasmin",
-          "Purok Rosal",
-          "Purok Velasco Ave / Urbano",
-        ];
-
+        // Dynamically collect all unique puroks from members
+        const purokSet = new Set();
         const purokCounts = {};
-        purokList.forEach((purok) => {
-          purokCounts[purok] = 0;
-        });
 
         members.forEach((member) => {
           if (isMemberDeceased(member)) return;
 
-          // Check purok field first
-          let foundPurok = null;
           const purok = member.purok?.trim();
-
-          if (purok && purokList.includes(purok)) {
-            foundPurok = purok;
-          } else if (member.address) {
-            // Search in address
-            foundPurok = purokList.find((p) =>
-              member.address.toLowerCase().includes(p.toLowerCase())
-            );
-          }
-
-          // If still not found and has barangay, try to match with barangay
-          if (!foundPurok && member.barangay) {
-            const barangay = member.barangay.toLowerCase();
-            // Map barangay to purok if needed
-            if (
-              barangay.includes("santo tomas") ||
-              barangay.includes("catleya")
-            ) {
-              foundPurok = "Purok Catleya";
-            } else if (barangay.includes("jasmin")) {
-              foundPurok = "Purok Jasmin";
-            } else if (barangay.includes("rosal")) {
-              foundPurok = "Purok Rosal";
-            } else if (
-              barangay.includes("velasco") ||
-              barangay.includes("urbano")
-            ) {
-              foundPurok = "Purok Velasco Ave / Urbano";
-            }
-          }
-
-          if (foundPurok) {
-            purokCounts[foundPurok]++;
+          if (purok) {
+            purokSet.add(purok);
+            purokCounts[purok] = (purokCounts[purok] || 0) + 1;
           }
         });
 
-        const purokChartData = purokList.map((purok) => ({
-          name: purok.replace("Purok ", ""),
-          value: purokCounts[purok],
-        }));
+        // Convert Set to sorted array
+        const purokList = Array.from(purokSet).sort();
 
-        setPurokData(purokChartData);
+        // If no puroks found, use empty array
+        if (purokList.length === 0) {
+          setPurokData([]);
+        } else {
+          const purokChartData = purokList.map((purok) => ({
+            name: purok.replace("Purok ", "").slice(0, 20),
+            value: purokCounts[purok] || 0,
+          }));
+
+          setPurokData(purokChartData);
+        }
       } catch (error) {
         console.error("Error loading dashboard data:", error);
       } finally {

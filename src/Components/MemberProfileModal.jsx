@@ -56,6 +56,7 @@ const DEFAULT_MEMBER_FORM = {
   // Contact
   address: "",
   contactNum: "",
+  purok: "",
 
   // Health & Status
   bloodType: "",
@@ -989,6 +990,33 @@ const MemberProfileModal = ({
                           isEditing ? formData.address : selectedMember.address
                         )}
                       </p>
+                    </div>
+
+                    {/* Purok */}
+                    <div className="bg-white rounded-xl p-4 shadow-sm">
+                      <label className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-1 block">
+                        Purok
+                      </label>
+                      {isEditing ? (
+                        <select
+                          name="purok"
+                          value={formData.purok || ""}
+                          onChange={handleChange}
+                          className="w-full text-lg font-semibold text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                        >
+                          <option value="">Select Purok</option>
+                          <option value="Purok Catleya">Purok Catleya</option>
+                          <option value="Purok Jasmin">Purok Jasmin</option>
+                          <option value="Purok Rosal">Purok Rosal</option>
+                          <option value="Purok Velasco Ave / Urbano">
+                            Purok Velasco Ave / Urbano
+                          </option>
+                        </select>
+                      ) : (
+                        <p className="text-lg font-semibold text-gray-900">
+                          {selectedMember.purok || "Not specified"}
+                        </p>
+                      )}
                     </div>
 
                     {/* Contact Number */}
