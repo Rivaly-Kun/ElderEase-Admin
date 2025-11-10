@@ -95,7 +95,7 @@ const getEventTimestamp = (event) => {
   return Number.isNaN(fallback) ? 0 : fallback;
 };
 
-const EventAttendanceModal = ({ open, onClose, currentUser }) => {
+const EventAttendanceModal = ({ open, onClose, currentUser = null }) => {
   const [events, setEvents] = useState([]);
   const [members, setMembers] = useState([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
@@ -848,10 +848,6 @@ EventAttendanceModal.propTypes = {
     username: PropTypes.string,
     role: PropTypes.string,
   }),
-};
-
-EventAttendanceModal.defaultProps = {
-  currentUser: null,
 };
 
 export default EventAttendanceModal;

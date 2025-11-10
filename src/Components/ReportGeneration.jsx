@@ -783,10 +783,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
 
         csvContent += `Total Members,${filteredMembers.length}\n`;
         csvContent += `Total Payments Collected,₱${totalRevenue.toLocaleString()}\n`;
-        csvContent += `Total Benefits Disbursed,₱${totalBenefits.toLocaleString()}\n`;
-        csvContent += `Net Balance,₱${(
-          totalRevenue - totalBenefits
-        ).toLocaleString()}\n\n`;
+        csvContent += `Total Benefits Disbursed,₱${totalBenefits.toLocaleString()}\n\n`;
       }
 
       // DEMOGRAPHIC SECTION
@@ -828,15 +825,24 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
           csvContent += `${range},${count}\n`;
         });
 
-        // Barangay Breakdown
-        csvContent += `\nBarangay Distribution\n`;
-        csvContent += `Barangay,Count\n`;
-        const barangayCount = {};
+        // Purok Breakdown
+        csvContent += `\nPurok Distribution\n`;
+        csvContent += `Purok,Count\n`;
+        const purokCount = {};
         filteredMembers.forEach((m) => {
-          barangayCount[m.barangay] = (barangayCount[m.barangay] || 0) + 1;
+          let purok = "Unknown";
+          if (m.purok) {
+            purok = m.purok;
+          } else if (m.address) {
+            const addressParts = m.address.split(",");
+            if (addressParts.length > 0) {
+              purok = addressParts[0].trim();
+            }
+          }
+          purokCount[purok] = (purokCount[purok] || 0) + 1;
         });
-        Object.entries(barangayCount).forEach(([barangay, count]) => {
-          csvContent += `${barangay},${count}\n`;
+        Object.entries(purokCount).forEach(([purok, count]) => {
+          csvContent += `${purok},${count}\n`;
         });
         csvContent += `\n`;
       }

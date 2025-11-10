@@ -17,10 +17,18 @@ function App() {
 
   const navigate = useNavigate();
 
-  const sanitizeStatus = (value) =>
-    String(value ?? "active").toLowerCase() === "active"
-      ? "active"
-      : "suspended";
+  const sanitizeStatus = (value) => {
+    const normalized = String(value ?? "active")
+      .trim()
+      .toLowerCase();
+    if (normalized === "active") {
+      return "active";
+    }
+    if (normalized === "suspended") {
+      return "suspended";
+    }
+    return normalized ? "suspended" : "active";
+  };
 
   const closeSuspendedModal = () => {
     setSuspendedUser(null);
@@ -30,11 +38,18 @@ function App() {
     // MFA verification successful
     setShowMFAVerification(false);
     storeSessionUser(mfaPendingUser, remember);
-    alert(`✅ Login successful! Welcome ${mfaPendingUser.role}.`);
+
+    // Clear form fields
     setUsername("");
     setPassword("");
     setMFAPendingUser(null);
-    navigate("/dashboard");
+
+    // Wait a brief moment for the session to be stored and context to update
+    // before navigating to prevent race conditions
+    setTimeout(() => {
+      alert(`✅ Login successful! Welcome ${mfaPendingUser.role}.`);
+      navigate("/dashboard");
+    }, 100);
   };
 
   const handleMFACancelled = () => {
@@ -52,8 +67,11 @@ function App() {
     const inputUser = username.trim();
     const inputPass = password;
 
+    console.log("[LOGIN] Starting login attempt with username:", inputUser);
+
     try {
       const dbRef = ref(db);
+      console.log("[LOGIN] Fetching admin and users data from Firebase...");
       const [adminSnapshot, usersSnapshot] = await Promise.all([
         get(child(dbRef, "admin")),
         get(child(dbRef, "users")),
@@ -62,6 +80,7 @@ function App() {
       const normalizedUser = inputUser.toLowerCase();
       const normalizedPass = String(inputPass).trim();
 
+      console.log("[LOGIN] Checking credentials against Firebase data...");
       let authenticatedUser = null;
 
       if (adminSnapshot.exists()) {
@@ -69,10 +88,12 @@ function App() {
         const adminUsername = String(adminData.username ?? "").trim();
         const adminPassword = String(adminData.pass ?? "");
 
+        console.log("[LOGIN] Checking admin credentials...");
         if (
           adminUsername.toLowerCase() === normalizedUser &&
           adminPassword === normalizedPass
         ) {
+          console.log("[LOGIN] ✅ Admin/Super Admin credentials matched!");
           authenticatedUser = {
             id: "super-admin",
             displayName: "Super Admin",
@@ -85,7 +106,13 @@ function App() {
       }
 
       if (!authenticatedUser && usersSnapshot.exists()) {
+        console.log("[LOGIN] Checking officer/user credentials...");
         const usersData = usersSnapshot.val();
+        console.log(
+          "[LOGIN] Total users in database:",
+          Object.keys(usersData).length
+        );
+
         for (const [id, userRecord] of Object.entries(usersData)) {
           const emailMatch =
             String(userRecord.email ?? "")
@@ -99,9 +126,19 @@ function App() {
             String(userRecord.password ?? "").trim() === normalizedPass;
 
           if ((emailMatch || usernameMatch) && passwordMatch) {
+            console.log("[LOGIN] ✅ User credentials matched for user ID:", id);
+            console.log("[LOGIN] User data:", {
+              email: userRecord.email,
+              username: userRecord.username,
+              role: userRecord.role,
+              status: userRecord.status,
+            });
+
             const normalizedStatus = sanitizeStatus(userRecord.status);
+            console.log("[LOGIN] Sanitized status:", normalizedStatus);
 
             if (normalizedStatus !== "active") {
+              console.log("[LOGIN] ⚠️ User account is suspended");
               setSuspendedUser({
                 displayName:
                   userRecord.displayName ||
@@ -115,6 +152,9 @@ function App() {
               return;
             }
 
+            console.log(
+              "[LOGIN] ✅ User status is active, creating authenticated user object"
+            );
             authenticatedUser = {
               id,
               displayName: userRecord.displayName || "Officer",
@@ -131,19 +171,23 @@ function App() {
       }
 
       if (!authenticatedUser) {
+        console.log("[LOGIN] ❌ Invalid username or password");
         alert("❌ Invalid username or password");
         return;
       }
 
+      console.log("[LOGIN] Authenticated user object:", authenticatedUser);
+
       // Check if user has MFA enabled
       if (authenticatedUser.mfaEnabled) {
+        console.log("[LOGIN] MFA enabled, showing verification screen");
         // Store user temporarily and show MFA verification
         setMFAPendingUser(authenticatedUser);
 
         // Send SMS code
         const mockCode = Math.random().toString().slice(2, 8);
         console.log(
-          `[DEMO] SMS Code sent to ${authenticatedUser.contactNumber}: ${mockCode}`
+          `[LOGIN] SMS Code sent to ${authenticatedUser.contactNumber}: ${mockCode}`
         );
         sessionStorage.setItem("mfaCode", mockCode);
 
@@ -151,15 +195,27 @@ function App() {
         return;
       }
 
+      console.log("[LOGIN] No MFA required, storing session user...");
       // No MFA, proceed with login
       storeSessionUser(authenticatedUser, remember);
+      console.log("[LOGIN] ✅ Session user stored");
 
-      alert(`✅ Login successful! Welcome ${authenticatedUser.role}.`);
+      // Clear form fields
       setUsername("");
       setPassword("");
-      navigate("/dashboard");
+
+      console.log(
+        "[LOGIN] Waiting 100ms before navigation to allow context update..."
+      );
+      // Wait a brief moment for the session to be stored and context to update
+      // before navigating to prevent race conditions
+      setTimeout(() => {
+        console.log("[LOGIN] ✅ Login successful! Navigating to dashboard");
+        alert(`✅ Login successful! Welcome ${authenticatedUser.role}.`);
+        navigate("/dashboard");
+      }, 100);
     } catch (err) {
-      console.error(err);
+      console.error("[LOGIN] ❌ Error during login:", err);
       alert("⚠️ Error connecting to Firebase");
     }
   };

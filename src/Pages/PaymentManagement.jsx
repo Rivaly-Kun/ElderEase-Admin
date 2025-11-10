@@ -36,6 +36,14 @@ import { useMemberSearch } from "../Context/MemberSearchContext";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
+const PAYMENT_MODE_OPTIONS = [
+  "Cash",
+  "GCash",
+  "Bank Deposit",
+  "Check",
+  "Voucher",
+];
+
 const PaymentManagement = () => {
   const location = useLocation();
   const [showReceipt, setShowReceipt] = useState(null);
@@ -224,7 +232,9 @@ const PaymentManagement = () => {
   };
 
   const viewHistory = (oscaID) => {
-    const history = payments.filter((p) => p.oscaID === oscaID);
+    const history = payments
+      .filter((p) => p.oscaID === oscaID)
+      .sort((a, b) => new Date(b.payDate) - new Date(a.payDate)); // Newest first
     if (history.length > 0) {
       setShowHistory(history);
     } else {
@@ -323,24 +333,25 @@ const PaymentManagement = () => {
     );
     const totalRecords = payments.length;
 
-    // Create header section with metadata
-    const metadata = [
-      ["ELDEREASE PAYMENT MANAGEMENT SYSTEM"],
-      ["Payment Export Report"],
-      [""],
-      [`Generated on: ${formattedDate} at ${formattedTime}`],
-      [`Total Records: ${totalRecords}`],
-      [
-        `Total Amount Collected: ₱${totalAmount.toLocaleString("en-PH", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`,
-      ],
-      [""],
-      [],
-    ];
+    // Create a more professional horizontal layout
+    const csvRows = [];
 
-    const headers = [
+    // Header section
+    csvRows.push(["ELDEREASE PAYMENT MANAGEMENT SYSTEM"]);
+    csvRows.push(["Payment Export Report"]);
+    csvRows.push([""]);
+    csvRows.push([`Generated on: ${formattedDate} at ${formattedTime}`]);
+    csvRows.push([`Total Records: ${totalRecords}`]);
+    csvRows.push([
+      `Total Amount Collected: ₱${totalAmount.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`,
+    ]);
+    csvRows.push([""]);
+
+    // Column headers
+    csvRows.push([
       "Receipt ID",
       "OSCA ID",
       "First Name",
@@ -353,11 +364,12 @@ const PaymentManagement = () => {
       "Description",
       "Status",
       "Authorized By",
-    ];
+    ]);
 
-    const rows = payments.map((p) => {
+    // Data rows
+    payments.forEach((p) => {
       const paymentDateTime = p.payDate ? new Date(p.payDate) : null;
-      return [
+      csvRows.push([
         p.firebaseKey || "",
         p.oscaID || "",
         p.firstName || "",
@@ -370,83 +382,99 @@ const PaymentManagement = () => {
         p.modePay || "",
         paymentDateTime ? paymentDateTime.toLocaleDateString() : "",
         paymentDateTime ? paymentDateTime.toLocaleTimeString() : "",
-        p.payDesc || "Annual Dues",
+        p.payDesc || "",
         p.payment_status || "Paid",
         p.authorAgent || "Unknown",
-      ];
+      ]);
     });
 
-    // Add summary section
-    const summaryRows = [
-      [],
-      ["PAYMENT METHOD SUMMARY"],
-      ["Payment Method", "Count", "Total Amount"],
-      ...Object.entries(
-        payments.reduce((acc, p) => {
-          const method = p.modePay || "Unknown";
-          if (!acc[method]) {
-            acc[method] = { count: 0, total: 0 };
-          }
-          acc[method].count += 1;
-          acc[method].total += parseFloat(p.amount) || 0;
-          return acc;
-        }, {})
-      ).map(([method, data]) => [
-        method,
-        data.count,
-        `₱${data.total.toLocaleString("en-PH", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`,
-      ]),
-      [],
-      ["STATUS SUMMARY"],
-      ["Status", "Count", "Total Amount"],
-      ...Object.entries(
-        payments.reduce((acc, p) => {
-          const status = p.payment_status || "Unknown";
-          if (!acc[status]) {
-            acc[status] = { count: 0, total: 0 };
-          }
-          acc[status].count += 1;
-          acc[status].total += parseFloat(p.amount) || 0;
-          return acc;
-        }, {})
-      ).map(([status, data]) => [
-        status,
-        data.count,
-        `₱${data.total.toLocaleString("en-PH", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`,
-      ]),
-    ];
+    // Add blank row
+    csvRows.push([""]);
 
-    // Combine all sections
-    const allRows = [...metadata, headers, ...rows, ...summaryRows];
+    // Payment Method Summary Section - Horizontal Layout
+    csvRows.push(["PAYMENT METHOD SUMMARY"]);
+
+    const paymentMethodSummary = payments.reduce((acc, p) => {
+      const method = p.modePay || "Unknown";
+      if (!acc[method]) {
+        acc[method] = { count: 0, total: 0 };
+      }
+      acc[method].count += 1;
+      acc[method].total += parseFloat(p.amount) || 0;
+      return acc;
+    }, {});
+
+    // Create header row for payment methods
+    const paymentMethodHeaders = ["Payment Method"];
+    const paymentMethodCounts = ["Count"];
+    const paymentMethodTotals = ["Total Amount"];
+
+    Object.entries(paymentMethodSummary).forEach(([method, data]) => {
+      paymentMethodHeaders.push(method);
+      paymentMethodCounts.push(data.count.toString());
+      paymentMethodTotals.push(
+        `₱${data.total.toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`
+      );
+    });
+
+    csvRows.push(paymentMethodHeaders);
+    csvRows.push(paymentMethodCounts);
+    csvRows.push(paymentMethodTotals);
+
+    // Add blank row
+    csvRows.push([""]);
+
+    // Status Summary Section - Horizontal Layout
+    csvRows.push(["STATUS SUMMARY"]);
+
+    const statusSummary = payments.reduce((acc, p) => {
+      const status = p.payment_status || "Unknown";
+      if (!acc[status]) {
+        acc[status] = { count: 0, total: 0 };
+      }
+      acc[status].count += 1;
+      acc[status].total += parseFloat(p.amount) || 0;
+      return acc;
+    }, {});
+
+    // Create header row for statuses
+    const statusHeaders = ["Status"];
+    const statusCounts = ["Count"];
+    const statusTotals = ["Total Amount"];
+
+    Object.entries(statusSummary).forEach(([status, data]) => {
+      statusHeaders.push(status);
+      statusCounts.push(data.count.toString());
+      statusTotals.push(
+        `₱${data.total.toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`
+      );
+    });
+
+    csvRows.push(statusHeaders);
+    csvRows.push(statusCounts);
+    csvRows.push(statusTotals);
 
     // Create CSV content with proper quoting
-    const csvContent = allRows
+    const csvContent = csvRows
       .map((row) =>
         row
           .map((cell) => {
             const cellStr = String(cell);
-            // Quote cells containing commas, quotes, or newlines
-            if (
-              cellStr.includes(",") ||
-              cellStr.includes('"') ||
-              cellStr.includes("\n") ||
-              cellStr.includes("₱")
-            ) {
-              return `"${cellStr.replace(/"/g, '""')}"`;
-            }
-            return cellStr;
+            // Always quote cells to ensure Excel treats them as text, not formulas
+            // This prevents #NAME? errors and ensures horizontal display
+            return `"${cellStr.replace(/"/g, '""')}"`;
           })
           .join(",")
       )
       .join("\n");
 
-    // Create blob with BOM for proper UTF-8 encoding (especially for ñ, é, etc.)
+    // Create blob with BOM for proper UTF-8 encoding
     const blob = new Blob(["\ufeff" + csvContent], {
       type: "text/csv;charset=utf-8;",
     });
@@ -546,7 +574,14 @@ const PaymentManagement = () => {
     });
   };
 
-  const filteredData = filterData(payments, searchTerm);
+  // Sort payments by date (newest first) and then filter
+  const sortedPayments = [...payments].sort((a, b) => {
+    const dateA = a.payDate ? new Date(a.payDate) : new Date(0);
+    const dateB = b.payDate ? new Date(b.payDate) : new Date(0);
+    return dateB - dateA; // Descending order (newest first)
+  });
+
+  const filteredData = filterData(sortedPayments, searchTerm);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -907,9 +942,10 @@ const PaymentManagement = () => {
           isDeceased={isDeceased}
           extractBarangay={extractBarangay}
           onMemberFound={(member) => {
-            console.log("📱 Opening profile modal for:", member);
-            setSelectedMember(member);
-            setShowProfileModal(true);
+            console.log("📱 QR Scanned - Showing payment history for:", member);
+            // Show payment history for the scanned member
+            viewHistory(member.oscaID);
+            setShowScanner(false);
           }}
         />
       )}
@@ -1070,16 +1106,15 @@ const PaymentManagement = () => {
                     <CreditCard className="w-4 h-4 text-purple-600" />
                     Payment Method
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    placeholder="Enter payment method..."
                     value={newPayment.modePay}
                     onChange={(e) =>
                       setNewPayment({ ...newPayment, modePay: e.target.value })
                     }
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors bg-white"
-                  >
-                    <option>GCash</option>
-                    <option>Over-the-counter</option>
-                  </select>
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors"
+                  />
                 </div>
               </div>
 
@@ -1103,19 +1138,15 @@ const PaymentManagement = () => {
                   <FileText className="w-4 h-4 text-purple-600" />
                   Description
                 </label>
-                <select
+                <input
+                  type="text"
+                  placeholder="Enter description..."
                   value={newPayment.payDesc}
                   onChange={(e) =>
                     setNewPayment({ ...newPayment, payDesc: e.target.value })
                   }
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors bg-white"
-                >
-                  <option>Annual Dues</option>
-                  <option>Monthly Dues</option>
-                  <option>Special Assessment</option>
-                  <option>Donation</option>
-                  <option>Other</option>
-                </select>
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors"
+                />
               </div>
             </div>
 
@@ -1566,8 +1597,11 @@ const PaymentManagement = () => {
                   }
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors bg-white"
                 >
-                  <option>GCash</option>
-                  <option>Over-the-counter</option>
+                  {PAYMENT_MODE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </div>
 

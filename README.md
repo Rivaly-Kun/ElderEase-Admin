@@ -16,6 +16,7 @@
 - `npm install jspdf jspdf-autotable`
 - `npm install recharts`
 - `npm install -g firebase-tools`
+- `npm install mammoth`
 
 ## 🚀 Run the Project
 

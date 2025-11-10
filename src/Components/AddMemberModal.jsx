@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, Users, Upload, Check, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  X,
+  Users,
+  Upload,
+  Check,
+  AlertCircle,
+  RefreshCw,
+  Camera,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { ref as dbRef, push, set } from "firebase/database";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import {
@@ -13,6 +23,12 @@ import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
 const AVAILABLE_BARANGAYS = ["Nagpayong", "Pinagbuhatan"];
+const PINAGBUHATAN_PUROKS = [
+  "Purok Catleya",
+  "Purok Jasmin",
+  "Purok Rosal",
+  "Purok Velasco Ave / Urbano",
+];
 
 const FieldGroup = ({ label, required = false, hint, children, className }) => (
   <div
@@ -25,7 +41,7 @@ const FieldGroup = ({ label, required = false, hint, children, className }) => (
       {required ? <span className="text-red-500">*</span> : null}
     </span>
     {hint ? (
-      <span className="text-[11px] font-normal text-gray-500">{hint}</span>
+      <span className="text-sm font-bold text-orange-600">{hint}</span>
     ) : null}
     {children}
   </div>
@@ -135,7 +151,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
   const [region] = useState("Manila");
   const [province] = useState("Metro Manila");
   const [city] = useState("Pasig City");
-  const [barangay, setBarangay] = useState("");
+  const [barangay] = useState("Pinagbuhatan"); // Hardcoded to Pinagbuhatan
   const [houseStreet, setHouseStreet] = useState("");
   const [purok, setPurok] = useState("");
   const [email, setEmail] = useState("");
@@ -149,7 +165,6 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
     oscaID: "",
     contrNum: "",
     ncscNum: "",
-    idBookletNum: "",
     precinctNo: "",
 
     // Personal Info
@@ -175,7 +190,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
     religion: "",
     educAttain: "",
     disabilities: "",
-    medConditions: "",
+    medConditions: [],
     healthFacility: "",
     emergencyHospital: "",
     bedridden: "No",
@@ -213,6 +228,10 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const videoRef = React.useRef(null);
+  const canvasRef = React.useRef(null);
+  const streamRef = React.useRef(null);
 
   const refreshCredentials = useCallback(() => {
     if (!formData.lastName || !formData.oscaID) {
@@ -231,7 +250,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
 
   const addressPreview = [
     houseStreet,
-    purok ? `Purok ${purok}` : "",
+    purok, // Purok name already includes "Purok" prefix
     barangay ? `Brgy. ${barangay}` : "",
     city,
     province,
@@ -321,10 +340,80 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
     setError("");
   };
 
+  const startCamera = async () => {
+    try {
+      setShowCamera(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      setError("Unable to access camera. Please check permissions.");
+      setShowCamera(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    if (canvasRef.current && videoRef.current) {
+      const context = canvasRef.current.getContext("2d");
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      context.drawImage(videoRef.current, 0, 0);
+
+      canvasRef.current.toBlob(
+        (blob) => {
+          const file = new File([blob], "camera-photo.jpg", {
+            type: "image/jpeg",
+          });
+          setFormData((prev) => ({ ...prev, img: file }));
+          setPreview(URL.createObjectURL(file));
+          stopCamera();
+          setError("");
+        },
+        "image/jpeg",
+        0.95
+      );
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setShowCamera(false);
+  };
+
+  // Medical conditions handlers
+  const addMedCondition = () => {
+    setFormData((prev) => ({
+      ...prev,
+      medConditions: [...prev.medConditions, ""],
+    }));
+  };
+
+  const updateMedCondition = (index, value) => {
+    setFormData((prev) => {
+      const updated = [...prev.medConditions];
+      updated[index] = value;
+      return { ...prev, medConditions: updated };
+    });
+  };
+
+  const removeMedCondition = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      medConditions: prev.medConditions.filter((_, i) => i !== index),
+    }));
+  };
+
   const validateForm = () => {
+    // Required fields
     const required = [
       "oscaID",
-      "contrNum",
       "firstName",
       "lastName",
       "gender",
@@ -334,8 +423,14 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
       "birthday_year",
       "placeOfBirth",
       "contactNum",
+      "emergencyContactNum",
+      "bedridden",
+      "dswdPensioner",
+      "dswdWithATM",
+      "localSeniorPensioner",
     ];
 
+    // Check all required fields are filled
     for (let field of required) {
       if (!formData[field]) {
         setError("Please fill out all required fields.");
@@ -343,33 +438,45 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
       }
     }
 
-    if (!barangay || !houseStreet) {
+    // Check address fields (required)
+    if (!barangay || !houseStreet || !purok) {
       setError(
-        "Please complete the address fields (Barangay and House/Street)."
+        "Please complete the address fields (House/Street, Purok, and Barangay)."
       );
       return false;
     }
 
+    // Validate contact number format
     if (!/^09\d{9}$/.test(formData.contactNum)) {
       setError("Contact number must be in format 09XXXXXXXXX");
       return false;
     }
 
+    // Validate emergency contact number format
+    if (!/^09\d{9}$/.test(formData.emergencyContactNum)) {
+      setError("Emergency contact number must be in format 09XXXXXXXXX");
+      return false;
+    }
+
+    // Validate age
     if (parseInt(formData.age) < 60) {
       setError("Member must be 60 years old or older");
       return false;
     }
 
+    // Profile photo is required
     if (!formData.img) {
       setError("Please upload a profile photo");
       return false;
     }
 
+    // Credentials are required
     if (!email || !password) {
       setError("Please generate credentials before submitting the form.");
       return false;
     }
 
+    // Validate family members (if any are added)
     for (let familyMember of formData.familyMembers) {
       if (
         !familyMember.name ||
@@ -424,7 +531,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
       )}/${formData.birthday_day.padStart(2, "0")}/${formData.birthday_year}`;
       const fullAddressSegments = [
         houseStreet,
-        purok ? `Purok ${purok}` : "",
+        purok, // Purok name already includes "Purok" prefix
         barangay ? `Brgy. ${barangay}` : "",
         city,
         province,
@@ -435,6 +542,9 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
 
       const memberData = {
         ...formData,
+        medConditions: formData.medConditions
+          .filter((c) => c.trim())
+          .join(", "), // Convert array to comma-separated string
         birthday,
         age: parseInt(formData.age),
         address: fullAddress,
@@ -487,7 +597,6 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
       oscaID: "",
       contrNum: "",
       ncscNum: "",
-      idBookletNum: "",
       precinctNo: "",
 
       // Personal Info
@@ -513,7 +622,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
       religion: "",
       educAttain: "",
       disabilities: "",
-      medConditions: "",
+      medConditions: [],
       healthFacility: "",
       emergencyHospital: "",
       bedridden: "No",
@@ -547,7 +656,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
       img: null,
     });
     setPreview(null);
-    setBarangay("");
+    // Barangay is hardcoded, no need to reset
     setHouseStreet("");
     setPurok("");
     setEmail("");
@@ -585,9 +694,30 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
           </div>
 
           {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border-l-4 border-red-600">
+                <div className="p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0">
+                      <AlertCircle className="w-8 h-8 text-red-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-red-800 mb-2">
+                        Validation Error
+                      </h3>
+                      <p className="text-red-700 text-base leading-relaxed">
+                        {error}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setError("")}
+                    className="mt-6 w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                  >
+                    OK
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -628,6 +758,15 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                     disabled={loading}
                   />
                 </label>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 cursor-pointer transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span className="text-sm font-medium">Take Photo</span>
+                </button>
                 <p className="text-xs text-gray-500 mt-2 text-center">
                   Max 5MB, JPG/PNG
                 </p>
@@ -686,7 +825,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Middle Name">
+                  <FieldGroup label="Middle Name" hint="Optional">
                     <input
                       type="text"
                       name="middleName"
@@ -706,7 +845,10 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Suffix" hint="Jr., Sr., III, etc.">
+                  <FieldGroup
+                    label="Suffix"
+                    hint="Jr., Sr., III, etc. (Optional)"
+                  >
                     <input
                       type="text"
                       name="suffix"
@@ -745,7 +887,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       <option value="Divorced">Divorced</option>
                     </select>
                   </FieldGroup>
-                  <FieldGroup label="Religion">
+                  <FieldGroup label="Religion" hint="Optional">
                     <input
                       type="text"
                       name="religion"
@@ -755,7 +897,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Citizenship">
+                  <FieldGroup label="Citizenship" hint="Optional">
                     <input
                       type="text"
                       name="citizenship"
@@ -882,31 +1024,29 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                     />
                   </FieldGroup>
 
-                  <FieldGroup label="Purok" hint="Optional">
-                    <input
-                      type="text"
-                      placeholder="Enter purok"
+                  <FieldGroup label="Purok" required>
+                    <select
                       value={purok}
                       onChange={(e) => setPurok(e.target.value)}
-                      className={inputControlClass}
-                      disabled={loading}
-                    />
-                  </FieldGroup>
-
-                  <FieldGroup label="Barangay" required>
-                    <select
-                      value={barangay}
-                      onChange={(e) => setBarangay(e.target.value)}
                       className={`${inputControlClass} bg-white`}
                       disabled={loading}
                     >
-                      <option value="">Select Barangay</option>
-                      {AVAILABLE_BARANGAYS.map((brgy) => (
-                        <option key={brgy} value={brgy}>
-                          {brgy}
+                      <option value="">Select Purok</option>
+                      {PINAGBUHATAN_PUROKS.map((purokName) => (
+                        <option key={purokName} value={purokName}>
+                          {purokName}
                         </option>
                       ))}
                     </select>
+                  </FieldGroup>
+
+                  <FieldGroup label="Barangay" required>
+                    <input
+                      type="text"
+                      value={barangay}
+                      readOnly
+                      className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600"
+                    />
                   </FieldGroup>
 
                   <FieldGroup label="City">
@@ -966,7 +1106,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="NCSC Number">
+                  <FieldGroup label="NCSC Number" hint="Optional">
                     <input
                       type="text"
                       name="ncscNum"
@@ -976,7 +1116,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Control Number" required>
+                  <FieldGroup label="Control Number" hint="Optional">
                     <input
                       type="text"
                       name="contrNum"
@@ -986,17 +1126,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="ID Booklet Number">
-                    <input
-                      type="text"
-                      name="idBookletNum"
-                      value={formData.idBookletNum}
-                      onChange={handleInputChange}
-                      className={inputControlClass}
-                      disabled={loading}
-                    />
-                  </FieldGroup>
-                  <FieldGroup label="Precinct Number">
+                  <FieldGroup label="Precinct Number" hint="Optional">
                     <input
                       type="text"
                       name="precinctNo"
@@ -1057,10 +1187,10 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
 
               <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
                 <h3 className="text-sm font-bold text-yellow-900 mb-3 uppercase">
-                  Health Information
+                  Health Information (Optional)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <FieldGroup label="Blood Type">
+                  <FieldGroup label="Blood Type" hint="Optional">
                     <input
                       type="text"
                       name="bloodType"
@@ -1072,18 +1202,45 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                   </FieldGroup>
                   <FieldGroup
                     label="Medical Conditions"
-                    hint="Hypertension, Diabetes, etc."
+                    hint="Hypertension, Diabetes, etc. (Optional)"
                   >
-                    <textarea
-                      name="medConditions"
-                      value={formData.medConditions}
-                      onChange={handleInputChange}
-                      rows="2"
-                      className={`${inputControlClass} resize-y`}
-                      disabled={loading}
-                    />
+                    <div className="space-y-2">
+                      {formData.medConditions.map((condition, index) => (
+                        <div key={index} className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder={`Condition ${index + 1}`}
+                            value={condition}
+                            onChange={(e) =>
+                              updateMedCondition(index, e.target.value)
+                            }
+                            className={`${inputControlClass} flex-1`}
+                            disabled={loading}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeMedCondition(index)}
+                            className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition"
+                            disabled={loading}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={addMedCondition}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-purple-500 hover:text-purple-600 transition"
+                        disabled={loading}
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="text-sm font-medium">
+                          Add Condition
+                        </span>
+                      </button>
+                    </div>
                   </FieldGroup>
-                  <FieldGroup label="Disabilities">
+                  <FieldGroup label="Disabilities" hint="Optional">
                     <input
                       type="text"
                       name="disabilities"
@@ -1095,7 +1252,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                   </FieldGroup>
                   <FieldGroup
                     label="Primary Health Facility"
-                    hint="Barangay health center or hospital"
+                    hint="Barangay health center or hospital (Optional)"
                   >
                     <input
                       type="text"
@@ -1106,7 +1263,10 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Emergency Hospital Preference">
+                  <FieldGroup
+                    label="Emergency Hospital Preference"
+                    hint="Optional"
+                  >
                     <input
                       type="text"
                       name="emergencyHospital"
@@ -1116,7 +1276,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Health Records Notes">
+                  <FieldGroup label="Health Records Notes" hint="Optional">
                     <textarea
                       name="healthRecords"
                       value={formData.healthRecords}
@@ -1131,10 +1291,10 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
 
               <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
                 <h3 className="text-sm font-bold text-cyan-900 mb-3 uppercase">
-                  Health & Social Status
+                  Health & Social Status (Required)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <FieldGroup label="Bedridden">
+                  <FieldGroup label="Bedridden" required>
                     <select
                       name="bedridden"
                       value={formData.bedridden}
@@ -1142,11 +1302,12 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       className={`${inputControlClass} bg-white`}
                       disabled={loading}
                     >
+                      <option value="">Select option</option>
                       <option value="No">No</option>
                       <option value="Yes">Yes</option>
                     </select>
                   </FieldGroup>
-                  <FieldGroup label="DSWD Pensioner">
+                  <FieldGroup label="DSWD Pensioner" required>
                     <select
                       name="dswdPensioner"
                       value={formData.dswdPensioner}
@@ -1154,11 +1315,12 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       className={`${inputControlClass} bg-white`}
                       disabled={loading}
                     >
+                      <option value="">Select option</option>
                       <option value="No">No</option>
                       <option value="Yes">Yes</option>
                     </select>
                   </FieldGroup>
-                  <FieldGroup label="DSWD Cash Card Holder">
+                  <FieldGroup label="DSWD Cash Card Holder" required>
                     <select
                       name="dswdWithATM"
                       value={formData.dswdWithATM}
@@ -1166,11 +1328,12 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       className={`${inputControlClass} bg-white`}
                       disabled={loading}
                     >
+                      <option value="">Select option</option>
                       <option value="No">No</option>
                       <option value="Yes">Yes</option>
                     </select>
                   </FieldGroup>
-                  <FieldGroup label="Local Senior Pensioner">
+                  <FieldGroup label="Local Senior Pensioner" required>
                     <select
                       name="localSeniorPensioner"
                       value={formData.localSeniorPensioner}
@@ -1178,6 +1341,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       className={`${inputControlClass} bg-white`}
                       disabled={loading}
                     >
+                      <option value="">Select option</option>
                       <option value="No">No</option>
                       <option value="Yes">Yes</option>
                     </select>
@@ -1190,7 +1354,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                   Emergency Contact
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FieldGroup label="Emergency Contact Name">
+                  <FieldGroup label="Emergency Contact Name" hint="Optional">
                     <input
                       type="text"
                       name="emergencyContactName"
@@ -1200,7 +1364,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Emergency Contact Number">
+                  <FieldGroup label="Emergency Contact Number" required>
                     <input
                       type="text"
                       name="emergencyContactNum"
@@ -1208,10 +1372,12 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       onChange={handleInputChange}
                       className={inputControlClass}
                       disabled={loading}
+                      placeholder="09XXXXXXXXX"
                     />
                   </FieldGroup>
                   <FieldGroup
                     label="Emergency Contact Address"
+                    hint="Optional"
                     className="md:col-span-2"
                   >
                     <textarea
@@ -1223,7 +1389,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Relationship to Senior">
+                  <FieldGroup label="Relationship to Senior" hint="Optional">
                     <input
                       type="text"
                       name="emergencyContactRelation"
@@ -1296,10 +1462,10 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
 
               <div className="bg-teal-50 rounded-xl p-4 border border-teal-200">
                 <h3 className="text-sm font-bold text-teal-900 mb-3 uppercase">
-                  Additional Information
+                  Additional Information (Optional)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FieldGroup label="Educational Attainment">
+                  <FieldGroup label="Educational Attainment" hint="Optional">
                     <input
                       type="text"
                       name="educAttain"
@@ -1309,7 +1475,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Nationality">
+                  <FieldGroup label="Nationality" hint="Optional">
                     <input
                       type="text"
                       name="nationality"
@@ -1385,62 +1551,66 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                         <X className="w-5 h-5" />
                       </button>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <input
-                          type="text"
-                          placeholder="Full Name *"
-                          value={member.name}
-                          onChange={(e) =>
-                            handleFamilyMemberChange(
-                              index,
-                              "name",
-                              e.target.value
-                            )
-                          }
-                          className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                          disabled={loading}
-                        />
-                        <input
-                          type="number"
-                          placeholder="Age *"
-                          value={member.age}
-                          onChange={(e) =>
-                            handleFamilyMemberChange(
-                              index,
-                              "age",
-                              e.target.value
-                            )
-                          }
-                          className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                          disabled={loading}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Address *"
-                          value={member.address}
-                          onChange={(e) =>
-                            handleFamilyMemberChange(
-                              index,
-                              "address",
-                              e.target.value
-                            )
-                          }
-                          className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                          disabled={loading}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Relationship *"
-                          value={member.relationship}
-                          onChange={(e) =>
-                            handleFamilyMemberChange(
-                              index,
-                              "relationship",
-                              e.target.value
-                            )
-                          }
-                          className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                          disabled={loading}
-                        />
+                        <FieldGroup label="Full Name" required>
+                          <input
+                            type="text"
+                            value={member.name}
+                            onChange={(e) =>
+                              handleFamilyMemberChange(
+                                index,
+                                "name",
+                                e.target.value
+                              )
+                            }
+                            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            disabled={loading}
+                          />
+                        </FieldGroup>
+                        <FieldGroup label="Age" required>
+                          <input
+                            type="number"
+                            value={member.age}
+                            onChange={(e) =>
+                              handleFamilyMemberChange(
+                                index,
+                                "age",
+                                e.target.value
+                              )
+                            }
+                            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            disabled={loading}
+                          />
+                        </FieldGroup>
+                        <FieldGroup label="Address" required>
+                          <input
+                            type="text"
+                            value={member.address}
+                            onChange={(e) =>
+                              handleFamilyMemberChange(
+                                index,
+                                "address",
+                                e.target.value
+                              )
+                            }
+                            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            disabled={loading}
+                          />
+                        </FieldGroup>
+                        <FieldGroup label="Relationship" required>
+                          <input
+                            type="text"
+                            value={member.relationship}
+                            onChange={(e) =>
+                              handleFamilyMemberChange(
+                                index,
+                                "relationship",
+                                e.target.value
+                              )
+                            }
+                            className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            disabled={loading}
+                          />
+                        </FieldGroup>
                       </div>
                     </div>
                   ))}
@@ -1476,6 +1646,51 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
             </div>
           </div>
         </div>
+
+        {/* Camera Modal */}
+        {showCamera && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
+              <div className="bg-blue-600 text-white p-4 flex justify-between items-center">
+                <h3 className="font-semibold">Take Photo</h3>
+                <button
+                  onClick={stopCamera}
+                  className="text-white hover:bg-white hover:bg-opacity-20 rounded p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4">
+                <div className="bg-black rounded-lg overflow-hidden mb-4">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-auto"
+                  />
+                </div>
+                <canvas ref={canvasRef} className="hidden" />
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={capturePhoto}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                  >
+                    <Camera className="w-5 h-5" />
+                    Capture
+                  </button>
+                  <button
+                    onClick={stopCamera}
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

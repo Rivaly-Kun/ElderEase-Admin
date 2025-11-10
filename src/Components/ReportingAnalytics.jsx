@@ -132,15 +132,25 @@ const ReportingAnalytics = () => {
     }));
   };
 
-  // Calculate Barangay Distribution
-  const getBarangayDistribution = () => {
-    const barangayData = {};
+  // Calculate Purok Distribution
+  const getPurokDistribution = () => {
+    const purokData = {};
     members.forEach((member) => {
-      const barangay = member.barangay || "Unknown";
-      barangayData[barangay] = (barangayData[barangay] || 0) + 1;
+      // Try to extract purok from member data
+      let purok = "Unknown";
+      if (member.purok) {
+        purok = member.purok;
+      } else if (member.address) {
+        // Try to extract from address if available
+        const addressParts = member.address.split(",");
+        if (addressParts.length > 0) {
+          purok = addressParts[0].trim();
+        }
+      }
+      purokData[purok] = (purokData[purok] || 0) + 1;
     });
 
-    return Object.entries(barangayData)
+    return Object.entries(purokData)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
@@ -182,7 +192,6 @@ const ReportingAnalytics = () => {
     return {
       totalCollected,
       approvedBenefits,
-      netBalance: totalCollected - approvedBenefits,
     };
   };
 
@@ -208,7 +217,7 @@ const ReportingAnalytics = () => {
   const COLORS = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"];
   const membershipTrends = getMembershipTrends();
   const ageDemographics = getAgeDemographics();
-  const barangayData = getBarangayDistribution();
+  const purokData = getPurokDistribution();
   const paymentTrends = getPaymentTrends();
   const financial = getFinancialSummary();
   const services = getServiceSummary();
@@ -352,14 +361,14 @@ const ReportingAnalytics = () => {
               )}
             </div>
 
-            {/* Members by Barangay */}
+            {/* Members by Purok */}
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h3 className="text-xl font-bold text-gray-900 mb-4">
-                Members by Barangay
+                Members by Purok
               </h3>
-              {barangayData.length > 0 ? (
+              {purokData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={barangayData}>
+                  <BarChart data={purokData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="name"
@@ -429,14 +438,6 @@ const ReportingAnalytics = () => {
                   </span>
                   <span className="text-2xl font-bold text-blue-600">
                     ₱{financial.approvedBenefits.toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg">
-                  <span className="text-gray-700 font-semibold">
-                    Net Balance
-                  </span>
-                  <span className="text-2xl font-bold text-purple-600">
-                    ₱{financial.netBalance.toLocaleString()}
                   </span>
                 </div>
               </div>

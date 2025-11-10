@@ -1,5 +1,11 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
-import { X, Users, Camera, Printer } from "lucide-react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
+import { X, Users, Camera, Printer, Plus, Trash2 } from "lucide-react";
 import QRCode from "react-qr-code";
 import {
   ref as dbRef,
@@ -22,6 +28,74 @@ import { createAuditLogger } from "../utils/AuditLogger";
 import MemberDocumentManager from "./MemberDocumentManager";
 import { useNavigate } from "react-router-dom";
 const auth = getAuth();
+
+const DEFAULT_MEMBER_FORM = {
+  // Identification
+  oscaID: "",
+  contrNum: "",
+  ncscNum: "",
+  precinctNo: "",
+  dateIssue: "",
+  dateExpiration: "",
+
+  // Personal Info
+  firstName: "",
+  middleName: "",
+  lastName: "",
+  suffix: "",
+  gender: "",
+  civilStat: "",
+  birthday: "",
+  age: "",
+  placeOfBirth: "",
+  nationality: "Filipino",
+  citizenship: "Filipino",
+  religion: "",
+  educAttain: "",
+
+  // Contact
+  address: "",
+  contactNum: "",
+
+  // Health & Status
+  bloodType: "",
+  disabilities: "",
+  medConditions: [],
+  healthFacility: "",
+  emergencyHospital: "",
+  healthRecords: "",
+  bedridden: "No",
+  dswdPensioner: "No",
+  dswdWithATM: "No",
+  localSeniorPensioner: "No",
+
+  // IDs & Documents
+  tin: "",
+  philHealth: "",
+  sssId: "",
+  nationalId: "",
+  barangayId: "",
+
+  // Living Arrangement
+  livingArr: "",
+  familyMembers: [],
+
+  // Emergency Contact
+  emergencyContactName: "",
+  emergencyContactAddress: "",
+  emergencyContactNum: "",
+  emergencyContactRelation: "",
+
+  // Other
+  psource: "",
+  regSupport: "Active",
+};
+
+const createDefaultMemberForm = () => ({
+  ...DEFAULT_MEMBER_FORM,
+  medConditions: [],
+  familyMembers: [],
+});
 const MemberProfileModal = ({
   showProfileModal,
   setShowProfileModal,
@@ -36,75 +110,113 @@ const MemberProfileModal = ({
   const smartIdRef = useRef(null);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    // Identification
-    oscaID: "",
-    contrNum: "",
-    ncscNum: "",
-    idBookletNum: "",
-    precinctNo: "",
-    dateIssue: "",
-    dateExpiration: "",
-
-    // Personal Info
-    firstName: "",
-    middleName: "",
-    lastName: "",
-    suffix: "",
-    gender: "",
-    civilStat: "",
-    birthday: "",
-    age: "",
-    placeOfBirth: "",
-    nationality: "Filipino",
-    citizenship: "Filipino",
-    religion: "",
-    educAttain: "",
-
-    // Contact
-    address: "",
-    contactNum: "",
-
-    // Health & Status
-    bloodType: "",
-    disabilities: "",
-    medConditions: "",
-    healthFacility: "",
-    emergencyHospital: "",
-    healthRecords: "",
-    bedridden: "No",
-    dswdPensioner: "No",
-    dswdWithATM: "No",
-    localSeniorPensioner: "No",
-
-    // IDs & Documents
-    tin: "",
-    philHealth: "",
-    sssId: "",
-    nationalId: "",
-    barangayId: "",
-
-    // Living Arrangement
-    livingArr: "",
-    familyMembers: [],
-
-    // Emergency Contact
-    emergencyContactName: "",
-    emergencyContactAddress: "",
-    emergencyContactNum: "",
-    emergencyContactRelation: "",
-
-    // Other
-    psource: "",
-    regSupport: "Active",
-  });
+  const [formData, setFormData] = useState(() => createDefaultMemberForm());
   const [saving, setSaving] = useState(false);
+  const [idSettings, setIdSettings] = useState({
+    organizationName: "Barangay Pinagbuhatan Senior Citizens",
+    presidentName: "",
+    presidentDesignation: "President",
+    secretaryName: "",
+    secretaryDesignation: "Secretary",
+    treasurerName: "",
+    treasurerDesignation: "Treasurer",
+    contactNumber: "0948-789-4396",
+    barangayName: "Barangay Pinagbuhatan",
+  });
   const [verifications, setVerifications] = useState([]);
   const [memberAvailments, setMemberAvailments] = useState([]);
   const [allBenefits, setAllBenefits] = useState([]);
   const [activeTab, setActiveTab] = useState("profile"); // 'profile' or 'documents'
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [showIDCardModal, setShowIDCardModal] = useState(false);
+  const [cardTheme, setCardTheme] = useState("classic");
+
+  const normalizeMemberData = useCallback((member) => {
+    const base = createDefaultMemberForm();
+    if (!member) return base;
+
+    const medConditionsArray = Array.isArray(member.medConditions)
+      ? member.medConditions
+          .map((condition) =>
+            typeof condition === "string" ? condition.trim() : condition
+          )
+          .filter((condition) =>
+            typeof condition === "string"
+              ? condition.length > 0
+              : condition !== undefined && condition !== null
+          )
+      : typeof member.medConditions === "string"
+      ? member.medConditions
+          .split(",")
+          .map((c) => c.trim())
+          .filter((c) => c.length > 0)
+      : [];
+
+    const familyMembersArray = Array.isArray(member.familyMembers)
+      ? member.familyMembers.map((relative) => ({
+          name: relative?.name || "",
+          age: relative?.age || "",
+          address: relative?.address || "",
+          relationship: relative?.relationship || "",
+        }))
+      : [];
+
+    return {
+      ...base,
+      ...member,
+      medConditions: medConditionsArray,
+      familyMembers: familyMembersArray,
+    };
+  }, []);
+
+  // Card theme configurations
+  const cardThemes = {
+    classic: {
+      name: "Classic Blue",
+      icon: "🔵",
+      border: "border-blue-900",
+      logo: "bg-blue-900",
+      gradient: "from-blue-50 via-white to-blue-50",
+    },
+    elegant: {
+      name: "Elegant Purple",
+      icon: "💜",
+      border: "border-purple-900",
+      logo: "bg-purple-900",
+      gradient: "from-purple-50 via-white to-purple-50",
+    },
+    modern: {
+      name: "Modern Green",
+      icon: "🟢",
+      border: "border-green-900",
+      logo: "bg-green-900",
+      gradient: "from-green-50 via-white to-green-50",
+    },
+    professional: {
+      name: "Professional Gray",
+      icon: "⚫",
+      border: "border-gray-900",
+      logo: "bg-gray-900",
+      gradient: "from-gray-50 via-white to-gray-50",
+    },
+    warm: {
+      name: "Warm Orange",
+      icon: "🟠",
+      border: "border-orange-900",
+      logo: "bg-orange-900",
+      gradient: "from-orange-50 via-white to-orange-50",
+    },
+    vibrant: {
+      name: "Vibrant Red",
+      icon: "🔴",
+      border: "border-red-900",
+      logo: "bg-red-900",
+      gradient: "from-red-50 via-white to-red-50",
+    },
+  };
+
+  const currentTheme = cardThemes[cardTheme];
 
   const { currentUser } = useResolvedCurrentUser();
   const actorId = currentUser?.uid || currentUser?.id || "unknown";
@@ -143,10 +255,18 @@ const MemberProfileModal = ({
 
   useEffect(() => {
     if (selectedMember) {
-      setFormData((prev) => ({ ...prev, ...selectedMember }));
+      const normalizedMember = normalizeMemberData(selectedMember);
+      setFormData(normalizedMember);
+    } else {
+      setFormData(createDefaultMemberForm());
     }
     setIsEditing(false);
-  }, [selectedMember, showProfileModal]);
+  }, [
+    selectedMember,
+    showProfileModal,
+    normalizeMemberData,
+    createDefaultMemberForm,
+  ]);
 
   useEffect(() => {
     if (!showProfileModal || !selectedMember) return;
@@ -278,6 +398,28 @@ const MemberProfileModal = ({
     return () => unsubscribe();
   }, [showProfileModal]);
 
+  // Fetch ID Settings
+  useEffect(() => {
+    const fetchIdSettings = async () => {
+      try {
+        const settingsRef = dbRef(db, "settings/idSettings");
+        const snapshot = await get(settingsRef);
+        if (snapshot.exists()) {
+          setIdSettings((prev) => ({
+            ...prev,
+            ...snapshot.val(),
+          }));
+        }
+      } catch (error) {
+        console.error("Error fetching ID settings:", error);
+      }
+    };
+
+    if (showProfileModal) {
+      fetchIdSettings();
+    }
+  }, [showProfileModal]);
+
   if (!showProfileModal || !selectedMember) return null;
 
   const handleChange = (e) => {
@@ -318,6 +460,28 @@ const MemberProfileModal = ({
     }));
   };
 
+  const addMedCondition = () => {
+    setFormData((prev) => ({
+      ...prev,
+      medConditions: [...(prev.medConditions || []), ""],
+    }));
+  };
+
+  const updateMedCondition = (index, value) => {
+    setFormData((prev) => {
+      const updated = [...(prev.medConditions || [])];
+      updated[index] = value;
+      return { ...prev, medConditions: updated };
+    });
+  };
+
+  const removeMedCondition = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      medConditions: (prev.medConditions || []).filter((_, i) => i !== index),
+    }));
+  };
+
   const handleSaveChanges = async () => {
     if (!window.confirm("Are you sure you want to save these changes?")) return;
 
@@ -334,6 +498,9 @@ const MemberProfileModal = ({
       const { password, email, ...dbData } = formData;
       const updatedPayload = {
         ...dbData,
+        medConditions: Array.isArray(dbData.medConditions)
+          ? dbData.medConditions.filter((c) => c.trim()).join(", ")
+          : dbData.medConditions,
         date_updated: new Date().toISOString(),
         updatedBy: actorLabel,
         updatedById: actorId,
@@ -490,7 +657,7 @@ const MemberProfileModal = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[1600px] max-h-[95vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[3000px] max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header - Fixed */}
         <div className="flex items-center justify-between px-8 py-6 border-b bg-gradient-to-r from-purple-600 to-blue-600">
           <div className="text-white">
@@ -1049,26 +1216,6 @@ const MemberProfileModal = ({
                       )}
                     </div>
 
-                    {/* ID Booklet Number */}
-                    <div className="bg-white rounded-xl p-4 shadow-sm">
-                      <label className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1 block">
-                        ID Booklet Number
-                      </label>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          name="idBookletNum"
-                          value={formData.idBookletNum || ""}
-                          onChange={handleChange}
-                          className="w-full text-lg font-semibold text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-400 outline-none"
-                        />
-                      ) : (
-                        <p className="text-lg font-semibold text-gray-900">
-                          {selectedMember.idBookletNum || "N/A"}
-                        </p>
-                      )}
-                    </div>
-
                     {/* Precinct Number */}
                     <div className="bg-white rounded-xl p-4 shadow-sm">
                       <label className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1 block">
@@ -1168,16 +1315,49 @@ const MemberProfileModal = ({
                         Medical Conditions
                       </label>
                       {isEditing ? (
-                        <textarea
-                          name="medConditions"
-                          value={formData.medConditions || ""}
-                          onChange={handleChange}
-                          rows="2"
-                          className="w-full text-base font-medium text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-red-400 outline-none"
-                        />
+                        <div className="space-y-2">
+                          {(formData.medConditions || []).map(
+                            (condition, index) => (
+                              <div
+                                key={index}
+                                className="flex gap-2 items-center"
+                              >
+                                <input
+                                  type="text"
+                                  value={condition}
+                                  onChange={(e) =>
+                                    updateMedCondition(index, e.target.value)
+                                  }
+                                  placeholder="Enter medical condition"
+                                  className="flex-1 text-base font-medium text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-red-400 outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeMedCondition(index)}
+                                  className="p-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            )
+                          )}
+                          <button
+                            type="button"
+                            onClick={addMedCondition}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-2 text-red-600 border-2 border-dashed border-red-300 rounded-lg hover:bg-red-50 transition-colors font-medium"
+                          >
+                            <Plus size={18} />
+                            Add Condition
+                          </button>
+                        </div>
                       ) : (
                         <p className="text-base font-medium text-gray-900">
-                          {selectedMember.medConditions || "N/A"}
+                          {Array.isArray(formData.medConditions) &&
+                          formData.medConditions.length > 0
+                            ? formData.medConditions
+                                .filter((c) => c.trim())
+                                .join(", ")
+                            : selectedMember.medConditions || "N/A"}
                         </p>
                       )}
                     </div>
@@ -1700,7 +1880,6 @@ const MemberProfileModal = ({
                                       e.target.value
                                     )
                                   }
-                                  placeholder="Full Name"
                                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                                   disabled={saving}
                                 />
@@ -1725,7 +1904,6 @@ const MemberProfileModal = ({
                                       e.target.value
                                     )
                                   }
-                                  placeholder="Age"
                                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                                   disabled={saving}
                                 />
@@ -1750,7 +1928,6 @@ const MemberProfileModal = ({
                                       e.target.value
                                     )
                                   }
-                                  placeholder="Relationship"
                                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                                   disabled={saving}
                                 />
@@ -1775,7 +1952,6 @@ const MemberProfileModal = ({
                                       e.target.value
                                     )
                                   }
-                                  placeholder="Address"
                                   className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                                   disabled={saving}
                                 />
@@ -2042,23 +2218,29 @@ const MemberProfileModal = ({
 
                   <div ref={smartIdRef} className="space-y-4">
                     {/* Front of Card */}
-                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border-4 border-blue-900 mb-4">
-                      <div className="p-5 bg-gradient-to-br from-blue-50 via-white to-blue-50">
+                    <div
+                      className={`bg-white rounded-2xl shadow-xl overflow-hidden border-4 ${currentTheme.border} mb-4`}
+                    >
+                      <div
+                        className={`p-3 sm:p-4 md:p-5 bg-gradient-to-br ${currentTheme.gradient} h-full flex flex-col`}
+                      >
                         {/* Header with Logo */}
-                        <div className="flex items-center gap-2 mb-4">
-                          <div className="w-14 h-14 rounded-full bg-blue-900 flex-shrink-0 overflow-hidden border-2 border-blue-900">
+                        <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
+                          <div
+                            className={`w-10 sm:w-12 md:w-14 h-10 sm:h-12 md:h-14 rounded-full ${currentTheme.logo} flex-shrink-0 overflow-hidden border border-sm:border-2 md:border-2 border-white flex items-center justify-center`}
+                          >
                             <img
                               src="/img/ElderEaseLogo.png"
-                              alt="Logo"
-                              className="w-full h-full object-cover"
+                              alt="ElderEase logo"
+                              className="w-7 sm:w-8 md:w-10 h-auto object-contain"
                             />
                           </div>
-                          <div className="flex-1">
-                            <h4 className="text-[10px] font-bold text-blue-900 leading-tight italic">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-[9px] sm:text-xs md:text-sm font-bold text-blue-900 leading-tight italic">
                               Barangay Pinagbuhatan Senior Citizens Association
                               Inc.
                             </h4>
-                            <p className="text-[7px] text-gray-600 leading-tight">
+                            <p className="text-[7px] sm:text-[8px] md:text-xs text-gray-600 leading-tight">
                               Unit 3, 2nd Floor, Robern Bldg., Evangelista
                               Extension St., Pinagbuhatan, Pasig City 1601
                             </p>
@@ -2066,10 +2248,10 @@ const MemberProfileModal = ({
                         </div>
 
                         {/* Main Content */}
-                        <div className="flex gap-3">
+                        <div className="flex gap-2 sm:gap-3 flex-1 overflow-hidden">
                           {/* Photo */}
-                          <div className="flex flex-col items-center">
-                            <div className="w-24 h-28 bg-gray-200 border-2 border-gray-400 overflow-hidden">
+                          <div className="flex flex-col items-center flex-shrink-0">
+                            <div className="w-16 sm:w-20 md:w-24 h-20 sm:h-24 md:h-28 bg-gray-200 border-2 border-gray-400 overflow-hidden">
                               {selectedMember.img &&
                               selectedMember.img instanceof File ? (
                                 <img
@@ -2084,99 +2266,96 @@ const MemberProfileModal = ({
                                   className="w-full h-full object-cover"
                                 />
                               ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white text-2xl font-bold">
+                                <div className="w-full h-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white text-base sm:text-lg md:text-xl font-bold">
                                   {selectedMember.firstName.charAt(0)}
                                   {selectedMember.lastName.charAt(0)}
                                 </div>
                               )}
                             </div>
-                            <div className="w-24 h-7 border-b-2 border-gray-400 flex items-end justify-center pb-1">
-                              <p className="text-[7px] text-gray-500">
-                                Signature
-                              </p>
+                            <div className="w-16 sm:w-20 md:w-24 h-4 sm:h-5 md:h-6 border-b-2 border-gray-400 flex items-center justify-center overflow-hidden">
+                              <p className="text-[6px] sm:text-[7px] md:text-sm text-gray-400"></p>
                             </div>
                           </div>
 
                           {/* Details */}
-                          <div className="flex-1 min-w-0">
-                            <div className="mb-1">
-                              <p className="text-[7px] text-gray-600 leading-none">
-                                Surname, Suffix, Firstname Middlename
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <div className="mb-1 sm:mb-1.5">
+                              <p className="text-[7px] sm:text-[8px] md:text-xs text-gray-600 leading-none">
+                                Name
                               </p>
-                              <p className="text-[10px] font-bold text-gray-900 leading-tight uppercase">
+                              <p className="text-[8px] sm:text-xs md:text-sm font-bold text-gray-900 leading-tight uppercase line-clamp-2">
                                 {selectedMember.lastName},{" "}
                                 {selectedMember.firstName}{" "}
                                 {selectedMember.middleName}
                               </p>
                             </div>
-                            <div className="grid grid-cols-3 gap-1 mb-1">
+                            <div className="grid grid-cols-3 gap-0.5 sm:gap-1 mb-1 sm:mb-1.5 text-[7px] sm:text-[8px] md:text-xs">
                               <div>
-                                <p className="text-[7px] text-gray-600 leading-none">
-                                  Date of Birth
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                  DOB
                                 </p>
-                                <p className="text-[8px] font-bold text-gray-900">
+                                <p className="font-bold text-gray-900 text-[7px] sm:text-[8px] md:text-xs">
                                   {selectedMember.birthday}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-[7px] text-gray-600 leading-none">
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
                                   Age/Sex
                                 </p>
-                                <p className="text-[8px] font-bold text-gray-900 uppercase">
-                                  {selectedMember.age}, {selectedMember.gender}
+                                <p className="font-bold text-gray-900 uppercase text-[7px] sm:text-[8px] md:text-xs">
+                                  {selectedMember.age}/
+                                  {selectedMember.gender.charAt(0)}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-[7px] text-gray-600 leading-none">
-                                  Civil Status
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                  Status
                                 </p>
-                                <p className="text-[8px] font-bold text-gray-900 uppercase">
-                                  {selectedMember.civilStat}
+                                <p className="font-bold text-gray-900 uppercase text-[7px] sm:text-[8px] md:text-xs">
+                                  {selectedMember.civilStat.substring(0, 4)}
                                 </p>
                               </div>
                             </div>
-                            <div className="mb-1">
-                              <p className="text-[7px] text-gray-600 leading-none">
-                                Address (House #, St., brgy.)
+                            <div className="mb-1 sm:mb-1.5">
+                              <p className="text-[7px] sm:text-[8px] md:text-xs text-gray-600 leading-none">
+                                Address
                               </p>
-                              <p className="text-[8px] font-bold text-gray-900 leading-tight uppercase line-clamp-2">
+                              <p className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-900 leading-tight uppercase line-clamp-1">
                                 {selectedMember.address}
                               </p>
                             </div>
-                            <div className="grid grid-cols-2 gap-1">
+                            <div className="grid grid-cols-2 gap-0.5 sm:gap-1 text-[7px] sm:text-[8px] md:text-xs">
                               <div>
-                                <p className="text-[7px] text-gray-600 leading-none">
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
                                   OSCA ID
                                 </p>
-                                <p className="text-[8px] font-bold text-gray-900">
+                                <p className="font-bold text-gray-900 text-[7px] sm:text-[8px] md:text-xs">
                                   {selectedMember.oscaID}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-[7px] text-gray-600 leading-none">
-                                  CONTACT #
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                  CONTACT
                                 </p>
-                                <p className="text-[8px] font-bold text-gray-900">
+                                <p className="font-bold text-gray-900 text-[7px] sm:text-[8px] md:text-xs">
                                   {selectedMember.contactNum}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-[7px] text-gray-600 leading-none">
-                                  BLOOD TYPE
-                                </p>
-                                <p className="text-[8px] font-bold text-gray-900">
-                                  O+
                                 </p>
                               </div>
                             </div>
                           </div>
 
                           {/* QR Code */}
-                          <div className="flex flex-col items-center justify-start">
-                            <div className="bg-white p-1 border border-gray-300">
+                          <div className="flex flex-col items-center justify-start flex-shrink-0">
+                            <div className="bg-white p-1 sm:p-1.5 border border-gray-300">
                               <QRCode
                                 value={selectedMember.oscaID.toString()}
-                                size={75}
+                                size={
+                                  window.innerWidth < 640
+                                    ? 60
+                                    : window.innerWidth < 768
+                                    ? 70
+                                    : 75
+                                }
                                 level="H"
                               />
                             </div>
@@ -2184,17 +2363,17 @@ const MemberProfileModal = ({
                         </div>
 
                         {/* Footer */}
-                        <div className="mt-3 pt-2 border-t-2 border-gray-400 text-center">
-                          <p className="text-[8px] font-bold text-gray-700 uppercase">
-                            Date of Organization Membership
+                        <div className="mt-1 sm:mt-2 pt-1 sm:pt-2 border-t border-gray-400 text-center">
+                          <p className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-700 uppercase leading-none">
+                            Membership Date
                           </p>
-                          <p className="text-[9px] font-bold text-gray-900">
+                          <p className="text-[8px] sm:text-xs md:text-sm font-bold text-gray-900">
                             {new Date(
                               selectedMember.date_created
                             ).toLocaleDateString()}{" "}
                             - 2 YEARS
                           </p>
-                          <p className="text-[8px] text-gray-600">
+                          <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600">
                             {selectedMember.contrNum}
                           </p>
                         </div>
@@ -2202,85 +2381,142 @@ const MemberProfileModal = ({
                     </div>
 
                     {/* Back of Card */}
-                    <div className="bg-white rounded-2xl shadow-xl overflow-hidden border-4 border-blue-900">
-                      <div className="p-5 bg-gradient-to-br from-gray-50 via-white to-gray-50">
-                        <div className="mb-2 pb-2 border-b-2 border-gray-300">
-                          <div className="flex justify-between items-start mb-1">
-                            <h5 className="text-[10px] font-bold text-gray-900 uppercase">
-                              Primary Medical Conditions
+                    <div
+                      className={`bg-white rounded-2xl shadow-xl overflow-hidden border-4 ${currentTheme.border}`}
+                    >
+                      <div className="p-3 sm:p-4 md:p-5 bg-gradient-to-br from-gray-50 via-white to-gray-50">
+                        {/* Medical Conditions Section */}
+                        <div className="mb-2 sm:mb-3 pb-2 sm:pb-3 border-b border-gray-300 flex-1">
+                          <div className="flex justify-between items-start gap-2 mb-1 sm:mb-1.5">
+                            <h5 className="text-[8px] sm:text-xs md:text-sm font-bold text-gray-900 uppercase leading-tight">
+                              Medical Conditions
                             </h5>
-                            <div className="text-right">
-                              <p className="text-[7px] text-gray-600">
-                                DATE ISSUED:{" "}
-                                {new Date(
-                                  selectedMember.date_created
-                                ).toLocaleDateString()}
-                              </p>
-                              <p className="text-[7px] text-gray-600">
-                                DATE EXPIRE:{" "}
-                                {new Date(
-                                  new Date(
-                                    selectedMember.date_created
-                                  ).setFullYear(
-                                    new Date(
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                ISSUED:{" "}
+                                {selectedMember.dateIssue
+                                  ? new Date(
+                                      selectedMember.dateIssue
+                                    ).toLocaleDateString()
+                                  : new Date(
                                       selectedMember.date_created
-                                    ).getFullYear() + 2
-                                  )
-                                ).toLocaleDateString()}
+                                    ).toLocaleDateString()}
+                              </p>
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                EXPIRE:{" "}
+                                {selectedMember.dateExpiration
+                                  ? new Date(
+                                      selectedMember.dateExpiration
+                                    ).toLocaleDateString()
+                                  : new Date(
+                                      new Date(
+                                        selectedMember.date_created
+                                      ).setFullYear(
+                                        new Date(
+                                          selectedMember.date_created
+                                        ).getFullYear() + 2
+                                      )
+                                    ).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-1 text-[8px]">
-                            <div>
-                              <p>☐ Hypertension</p>
-                              <p>☐ Osteoporosis</p>
-                            </div>
-                            <div>
-                              <p>☐ Diabetes</p>
+                          <div className="text-[7px] sm:text-[8px] md:text-xs">
+                            <div className="space-y-0.5">
+                              {/* Medical Conditions */}
+                              {Array.isArray(selectedMember.medConditions) &&
+                              selectedMember.medConditions.length > 0
+                                ? selectedMember.medConditions.map(
+                                    (condition, idx) => (
+                                      <p
+                                        key={idx}
+                                        className="text-gray-900 font-medium"
+                                      >
+                                        • {condition}
+                                      </p>
+                                    )
+                                  )
+                                : typeof selectedMember.medConditions ===
+                                    "string" &&
+                                  selectedMember.medConditions.trim()
+                                ? selectedMember.medConditions
+                                    .split(",")
+                                    .map((condition, idx) => (
+                                      <p
+                                        key={idx}
+                                        className="text-gray-900 font-medium"
+                                      >
+                                        • {condition.trim()}
+                                      </p>
+                                    ))
+                                : null}
+
+                              {/* Disabilities */}
+                              {selectedMember.disabilities && (
+                                <p className="text-gray-900 font-medium">
+                                  • {selectedMember.disabilities}
+                                </p>
+                              )}
+
+                              {/* Bedridden Status */}
+                              {selectedMember.bedridden === "Yes" && (
+                                <p className="text-gray-900 font-medium">
+                                  • Bedridden
+                                </p>
+                              )}
+
+                              {/* Show "None reported" only if all are empty */}
+                              {!selectedMember.medConditions &&
+                                !selectedMember.disabilities &&
+                                selectedMember.bedridden !== "Yes" && (
+                                  <p className="text-gray-500 italic">
+                                    None reported
+                                  </p>
+                                )}
                             </div>
                           </div>
                         </div>
-                        <div className="mb-2">
-                          <h5 className="text-[9px] font-bold text-gray-900 mb-1">
+
+                        {/* Non-Transferable Notice */}
+                        <div className="mb-1.5 sm:mb-2">
+                          <h5 className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-900 mb-0.5 leading-tight">
                             THIS CARD IS NON-TRANSFERABLE
                           </h5>
-                          <p className="text-[7px] text-gray-700 leading-tight text-justify">
-                            This is to certify that the bearer hereof whose
-                            photo, signature and date-of-birth affixed hereon is
-                            a bona fide member of the senior citizen
-                            organization of Barangay Pinagbuhatan. If this card
-                            is found, please return to organization admin or
-                            call{" "}
-                            <span className="font-bold">0948-789-4396</span>.
-                          </p>
-                        </div>
-                        <div className="mb-2">
-                          <h5 className="text-[9px] font-bold text-gray-900 mb-1">
-                            Card holder other details:
-                          </h5>
-                          <p className="text-[7px] text-gray-700 mb-1">
-                            Precinct No. 0234A
-                          </p>
-                          <h5 className="text-[8px] font-bold text-gray-900 mb-1">
-                            IN CASE OF EMERGENCY, PLEASE NOTIFY:
-                          </h5>
-                          <p className="text-[7px] text-gray-700 leading-tight">
-                            <span className="font-bold">JILLIAN ROMRERO</span>{" "}
-                            is 40 H. CRUZ VILLA MONIQUE
-                            <br />
+                          <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-700 leading-tight text-justify">
+                            This is to certify that the bearer is a bona fide
+                            member of{" "}
+                            {idSettings.barangayName || "Barangay Pinagbuhatan"}{" "}
+                            Senior Citizens. If found, please call{" "}
                             <span className="font-bold">
-                              DOÑA AURORA, PINAGBUHATAN, 0969-687-9807
-                              (DAUGHTER)
+                              {idSettings.contactNumber || "0948-789-4396"}
                             </span>
+                            .
                           </p>
                         </div>
-                        <div className="pt-2 border-t border-gray-300 text-center">
-                          <div className="h-6 mb-1"></div>
-                          <p className="text-[8px] font-semibold text-gray-900">
-                            Mr. Ricardo H. Tlazon
+
+                        {/* Emergency Contact */}
+                        <div className="mb-1.5 sm:mb-2 flex-1">
+                          <h5 className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-900 mb-0.5 leading-tight">
+                            EMERGENCY CONTACT:
+                          </h5>
+                          <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-700 leading-tight">
+                            <span className="font-semibold">Contact: </span>
+                            {selectedMember.contactNum || "Not provided"}
                           </p>
-                          <p className="text-[7px] text-gray-600">
-                            Organization President
+                          <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-700 leading-tight line-clamp-2">
+                            <span className="font-semibold">Address: </span>
+                            {selectedMember.address || "Not provided"}
+                          </p>
+                        </div>
+
+                        {/* Footer Signature */}
+                        <div className="pt-1 sm:pt-2 border-t border-gray-300 text-center">
+                          <div className="h-3 sm:h-4 md:h-5 mb-0.5"></div>
+                          <p className="text-[7px] sm:text-[8px] md:text-xs font-semibold text-gray-900 leading-tight">
+                            {idSettings.presidentName ||
+                              "Mr. Ricardo H. Tlazon"}
+                          </p>
+                          <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-tight">
+                            {idSettings.presidentDesignation || "President"}
                           </p>
                         </div>
                       </div>
@@ -2318,7 +2554,7 @@ const MemberProfileModal = ({
               <button
                 onClick={() => {
                   setIsEditing(false);
-                  setFormData({ ...(selectedMember || {}) });
+                  setFormData(normalizeMemberData(selectedMember));
                 }}
                 className="flex-1 min-w-[150px] px-6 py-4 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 transition font-bold text-base shadow-lg"
               >
@@ -2340,11 +2576,11 @@ const MemberProfileModal = ({
                 Update Benefits
               </button>
               <button
-                onClick={handlePrintSmartId}
+                onClick={() => setShowIDCardModal(true)}
                 className="flex-1 min-w-[150px] px-6 py-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition font-bold text-base shadow-lg flex items-center justify-center gap-2"
               >
                 <Printer className="w-5 h-5" />
-                Print Smart ID
+                View Smart ID
               </button>
               <button
                 onClick={() => {
@@ -2366,6 +2602,412 @@ const MemberProfileModal = ({
           )}
         </div>
       </div>
+
+      {/* ID Card Modal */}
+      {showIDCardModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800">
+                    Your Smart ID Card
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    ID No: {selectedMember.oscaID}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowIDCardModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Theme Selector Dropdown */}
+              <div className="mb-6 bg-gray-50 rounded-xl border border-gray-200 p-4">
+                <div className="mb-3">
+                  <h3 className="font-bold text-gray-800 mb-1">
+                    Choose ID Card Theme
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Select a color theme for your ID card
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {Object.entries(cardThemes).map(([key, theme]) => (
+                    <button
+                      key={key}
+                      onClick={() => setCardTheme(key)}
+                      className={`p-3 rounded-lg border-2 transition hover:scale-105 ${
+                        cardTheme === key
+                          ? `${theme.border} bg-white`
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">{theme.icon}</span>
+                        <div className="text-left">
+                          <p className="text-sm font-semibold text-gray-800">
+                            {theme.name}
+                          </p>
+                          {cardTheme === key && (
+                            <p className="text-xs text-green-600 font-medium">
+                              ✓ Active
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* ID Cards Container */}
+              <div className="space-y-6 sm:space-y-8" data-smart-id-print>
+                {/* Front of Card */}
+                <div className="flex flex-col items-center">
+                  <h3 className="text-sm sm:text-lg font-semibold text-gray-700 mb-2 sm:mb-4 print:hidden">
+                    Front Side
+                  </h3>
+                  <div
+                    className={`smart-id-card bg-white rounded-2xl sm:rounded-3xl shadow-xl overflow-hidden border-4 ${currentTheme.border}`}
+                    style={{
+                      width: "100%",
+                      maxWidth: "650px",
+                      aspectRatio: "85.6 / 53.98",
+                      printColorAdjust: "exact",
+                      WebkitPrintColorAdjust: "exact",
+                    }}
+                  >
+                    <div className="p-3 sm:p-4 md:p-5 bg-gradient-to-br from-blue-50 via-white to-blue-50 h-full flex flex-col">
+                      {/* Header with Logo */}
+                      <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
+                        {/* Logo Circle */}
+                        <div
+                          className={`w-10 sm:w-12 md:w-14 h-10 sm:h-12 md:h-14 rounded-full ${currentTheme.logo} flex-shrink-0 overflow-hidden border border-sm:border-2 md:border-2 border-white flex items-center justify-center`}
+                        >
+                          <img
+                            src="/img/ElderEaseLogo.png"
+                            alt="ElderEase logo"
+                            className="w-7 sm:w-8 md:w-10 h-auto object-contain"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-[9px] sm:text-xs md:text-sm font-bold text-blue-900 leading-tight italic">
+                            Barangay Pinagbuhatan Senior Citizens Association
+                            Inc.
+                          </h4>
+                          <p className="text-[7px] sm:text-[8px] md:text-xs text-gray-600 leading-tight">
+                            Unit 3, 2nd Floor, Robern Bldg., Evangelista
+                            Extension St., Pinagbuhatan, Pasig City 1601
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Main Content */}
+                      <div className="flex gap-2 sm:gap-3 flex-1 overflow-hidden">
+                        {/* Photo */}
+                        <div className="flex flex-col items-center flex-shrink-0">
+                          <div className="w-16 sm:w-20 md:w-24 h-20 sm:h-24 md:h-28 bg-gray-200 border-2 border-gray-400 overflow-hidden">
+                            {selectedMember.img ? (
+                              <img
+                                src={getImagePath(selectedMember.img)}
+                                alt="Profile"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-purple-400 to-blue-400 flex items-center justify-center text-white text-base sm:text-lg md:text-xl font-bold">
+                                {selectedMember.firstName.charAt(0)}
+                                {selectedMember.lastName.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="w-16 sm:w-20 md:w-24 h-4 sm:h-5 md:h-6 border-b-2 border-gray-400 flex items-center justify-center overflow-hidden">
+                            <p className="text-[6px] sm:text-[7px] md:text-sm text-gray-400"></p>
+                          </div>
+                        </div>
+
+                        {/* Details */}
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <div className="mb-1 sm:mb-1.5">
+                            <p className="text-[7px] sm:text-[8px] md:text-xs text-gray-600 leading-none">
+                              Name
+                            </p>
+                            <p className="text-[8px] sm:text-xs md:text-sm font-bold text-gray-900 leading-tight uppercase line-clamp-2">
+                              {selectedMember.lastName},{" "}
+                              {selectedMember.firstName}{" "}
+                              {selectedMember.middleName}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-3 gap-0.5 sm:gap-1 mb-1 sm:mb-1.5 text-[7px] sm:text-[8px] md:text-xs">
+                            <div>
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                DOB
+                              </p>
+                              <p className="font-bold text-gray-900 text-[7px] sm:text-[8px] md:text-xs">
+                                {selectedMember.birthday}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                Age/Sex
+                              </p>
+                              <p className="font-bold text-gray-900 uppercase text-[7px] sm:text-[8px] md:text-xs">
+                                {selectedMember.age}/
+                                {selectedMember.gender.charAt(0)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                Status
+                              </p>
+                              <p className="font-bold text-gray-900 uppercase text-[7px] sm:text-[8px] md:text-xs">
+                                {selectedMember.civilStat.substring(0, 4)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mb-1 sm:mb-1.5">
+                            <p className="text-[7px] sm:text-[8px] md:text-xs text-gray-600 leading-none">
+                              Address
+                            </p>
+                            <p className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-900 leading-tight uppercase line-clamp-1">
+                              {selectedMember.address}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-0.5 sm:gap-1 text-[7px] sm:text-[8px] md:text-xs">
+                            <div>
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                OSCA ID
+                              </p>
+                              <p className="font-bold text-gray-900 text-[7px] sm:text-[8px] md:text-xs">
+                                {selectedMember.oscaID}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                                CONTACT
+                              </p>
+                              <p className="font-bold text-gray-900 text-[7px] sm:text-[8px] md:text-xs">
+                                {selectedMember.contactNum}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* QR Code */}
+                        <div className="flex flex-col items-center justify-start flex-shrink-0">
+                          <div className="bg-white p-1 sm:p-1.5 border border-gray-300">
+                            <QRCode
+                              value={selectedMember.oscaID.toString()}
+                              size={
+                                window.innerWidth < 640
+                                  ? 60
+                                  : window.innerWidth < 768
+                                  ? 70
+                                  : 75
+                              }
+                              level="H"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <div className="mt-1 sm:mt-2 pt-1 sm:pt-2 border-t border-gray-400 text-center">
+                        <p className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-700 uppercase leading-none">
+                          Membership Date
+                        </p>
+                        <p className="text-[8px] sm:text-xs md:text-sm font-bold text-gray-900">
+                          {new Date(
+                            selectedMember.date_created
+                          ).toLocaleDateString()}{" "}
+                          - 2 YEARS
+                        </p>
+                        <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600">
+                          {selectedMember.contrNum}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Back of Card */}
+                <div className="flex flex-col items-center">
+                  <h3 className="text-sm sm:text-lg font-semibold text-gray-700 mb-2 sm:mb-4 print:hidden">
+                    Back Side
+                  </h3>
+                  <div
+                    className={`smart-id-card bg-white rounded-2xl sm:rounded-3xl shadow-xl overflow-hidden border-4 ${currentTheme.border}`}
+                    style={{
+                      width: "100%",
+                      maxWidth: "650px",
+                      aspectRatio: "85.6 / 53.98",
+                      printColorAdjust: "exact",
+                      WebkitPrintColorAdjust: "exact",
+                    }}
+                  >
+                    <div className="p-3 sm:p-4 md:p-5 bg-gradient-to-br from-gray-50 via-white to-gray-50 h-full flex flex-col">
+                      {/* Medical Conditions Section */}
+                      <div className="mb-2 sm:mb-3 pb-2 sm:pb-3 border-b border-gray-300 flex-1">
+                        <div className="flex justify-between items-start gap-2 mb-1 sm:mb-1.5">
+                          <h5 className="text-[8px] sm:text-xs md:text-sm font-bold text-gray-900 uppercase leading-tight">
+                            Medical Conditions
+                          </h5>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                              ISSUED:{" "}
+                              {selectedMember.dateIssue
+                                ? new Date(
+                                    selectedMember.dateIssue
+                                  ).toLocaleDateString()
+                                : new Date(
+                                    selectedMember.date_created
+                                  ).toLocaleDateString()}
+                            </p>
+                            <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-none">
+                              EXPIRE:{" "}
+                              {selectedMember.dateExpiration
+                                ? new Date(
+                                    selectedMember.dateExpiration
+                                  ).toLocaleDateString()
+                                : new Date(
+                                    new Date(
+                                      selectedMember.date_created
+                                    ).setFullYear(
+                                      new Date(
+                                        selectedMember.date_created
+                                      ).getFullYear() + 2
+                                    )
+                                  ).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-[7px] sm:text-[8px] md:text-xs">
+                          <div className="space-y-0.5">
+                            {/* Medical Conditions */}
+                            {Array.isArray(selectedMember.medConditions) &&
+                            selectedMember.medConditions.length > 0
+                              ? selectedMember.medConditions.map(
+                                  (condition, idx) => (
+                                    <p
+                                      key={idx}
+                                      className="text-gray-900 font-medium"
+                                    >
+                                      • {condition}
+                                    </p>
+                                  )
+                                )
+                              : typeof selectedMember.medConditions ===
+                                  "string" &&
+                                selectedMember.medConditions.trim()
+                              ? selectedMember.medConditions
+                                  .split(",")
+                                  .map((condition, idx) => (
+                                    <p
+                                      key={idx}
+                                      className="text-gray-900 font-medium"
+                                    >
+                                      • {condition.trim()}
+                                    </p>
+                                  ))
+                              : null}
+
+                            {/* Disabilities */}
+                            {selectedMember.disabilities && (
+                              <p className="text-gray-900 font-medium">
+                                • {selectedMember.disabilities}
+                              </p>
+                            )}
+
+                            {/* Bedridden Status */}
+                            {selectedMember.bedridden === "Yes" && (
+                              <p className="text-gray-900 font-medium">
+                                • Bedridden
+                              </p>
+                            )}
+
+                            {/* Show "None reported" only if all are empty */}
+                            {!selectedMember.medConditions &&
+                              !selectedMember.disabilities &&
+                              selectedMember.bedridden !== "Yes" && (
+                                <p className="text-gray-500 italic">
+                                  None reported
+                                </p>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Non-Transferable Notice */}
+                      <div className="mb-1.5 sm:mb-2">
+                        <h5 className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-900 mb-0.5 leading-tight">
+                          THIS CARD IS NON-TRANSFERABLE
+                        </h5>
+                        <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-700 leading-tight text-justify">
+                          This is to certify that the bearer is a bona fide
+                          member of{" "}
+                          {idSettings.barangayName || "Barangay Pinagbuhatan"}{" "}
+                          Senior Citizens. If found, please call{" "}
+                          <span className="font-bold">
+                            {idSettings.contactNumber || "0948-789-4396"}
+                          </span>
+                          .
+                        </p>
+                      </div>
+
+                      {/* Emergency Contact */}
+                      <div className="mb-1.5 sm:mb-2 flex-1">
+                        <h5 className="text-[7px] sm:text-[8px] md:text-xs font-bold text-gray-900 mb-0.5 leading-tight">
+                          EMERGENCY CONTACT:
+                        </h5>
+                        <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-700 leading-tight">
+                          <span className="font-semibold">Contact: </span>
+                          {selectedMember.contactNum || "Not provided"}
+                        </p>
+                        <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-700 leading-tight line-clamp-2">
+                          <span className="font-semibold">Address: </span>
+                          {selectedMember.address || "Not provided"}
+                        </p>
+                      </div>
+
+                      {/* Footer Signature */}
+                      <div className="pt-1 sm:pt-2 border-t border-gray-300 text-center">
+                        <div className="h-3 sm:h-4 md:h-5 mb-0.5"></div>
+                        <p className="text-[7px] sm:text-[8px] md:text-xs font-semibold text-gray-900 leading-tight">
+                          {idSettings.presidentName || "Mr. Ricardo H. Tlazon"}
+                        </p>
+                        <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-600 leading-tight">
+                          {idSettings.presidentDesignation || "President"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button
+                  onClick={handlePrintSmartId}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print
+                </button>
+                <button
+                  onClick={() => setShowIDCardModal(false)}
+                  className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium ml-auto"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -14,6 +14,17 @@ import {
   Lock,
   MessageSquare,
 } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import Sidebar from "../Components/Sidebar";
 import Header from "../Components/Header";
 import { db } from "../services/firebase";
@@ -62,6 +73,8 @@ const Dashboard = () => {
     },
   ]);
   const [recentActivities, setRecentActivities] = useState([]);
+  const [membershipTrends, setMembershipTrends] = useState([]);
+  const [purokData, setPurokData] = useState([]);
   const navigate = useNavigate();
   const { currentUser, loading: currentUserLoading } = useResolvedCurrentUser();
   const userRole = currentUser?.role || currentUser?.roleName || "Unknown";
@@ -122,6 +135,11 @@ const Dashboard = () => {
         actionType: "create",
       },
     ];
+
+    // Super Admin sees all actions
+    if (userRole === "Super Admin") {
+      return actions;
+    }
 
     return actions.filter(({ module, actionType }) =>
       module ? canAccessModule(userRole, module, actionType) : true
@@ -361,6 +379,92 @@ const Dashboard = () => {
           .map(({ timestamp, ...rest }) => rest);
 
         setRecentActivities(combinedActivities);
+
+        // === Membership Trends (Monthly registration) ===
+        const monthData = {};
+        members.forEach((member) => {
+          if (isMemberDeceased(member)) return;
+          const date = new Date(member.date_created || new Date());
+          const monthKey = `${date.getFullYear()}-${String(
+            date.getMonth() + 1
+          ).padStart(2, "0")}`;
+          monthData[monthKey] = (monthData[monthKey] || 0) + 1;
+        });
+
+        const trendsData = Object.keys(monthData)
+          .sort()
+          .slice(-12)
+          .map((month) => ({
+            month: new Date(month + "-01").toLocaleDateString("en-US", {
+              month: "short",
+              year: "numeric",
+            }),
+            count: monthData[month],
+          }));
+
+        setMembershipTrends(trendsData);
+
+        // === Members by Purok ===
+        const purokList = [
+          "Purok Catleya",
+          "Purok Jasmin",
+          "Purok Rosal",
+          "Purok Velasco Ave / Urbano",
+        ];
+
+        const purokCounts = {};
+        purokList.forEach((purok) => {
+          purokCounts[purok] = 0;
+        });
+
+        members.forEach((member) => {
+          if (isMemberDeceased(member)) return;
+
+          // Check purok field first
+          let foundPurok = null;
+          const purok = member.purok?.trim();
+
+          if (purok && purokList.includes(purok)) {
+            foundPurok = purok;
+          } else if (member.address) {
+            // Search in address
+            foundPurok = purokList.find((p) =>
+              member.address.toLowerCase().includes(p.toLowerCase())
+            );
+          }
+
+          // If still not found and has barangay, try to match with barangay
+          if (!foundPurok && member.barangay) {
+            const barangay = member.barangay.toLowerCase();
+            // Map barangay to purok if needed
+            if (
+              barangay.includes("santo tomas") ||
+              barangay.includes("catleya")
+            ) {
+              foundPurok = "Purok Catleya";
+            } else if (barangay.includes("jasmin")) {
+              foundPurok = "Purok Jasmin";
+            } else if (barangay.includes("rosal")) {
+              foundPurok = "Purok Rosal";
+            } else if (
+              barangay.includes("velasco") ||
+              barangay.includes("urbano")
+            ) {
+              foundPurok = "Purok Velasco Ave / Urbano";
+            }
+          }
+
+          if (foundPurok) {
+            purokCounts[foundPurok]++;
+          }
+        });
+
+        const purokChartData = purokList.map((purok) => ({
+          name: purok.replace("Purok ", ""),
+          value: purokCounts[purok],
+        }));
+
+        setPurokData(purokChartData);
       } catch (error) {
         console.error("Error loading dashboard data:", error);
       } finally {
@@ -457,6 +561,68 @@ const Dashboard = () => {
                     administrator if you need additional access.
                   </p>
                 )}
+              </div>
+
+              {/* === Charts Section === */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+                {/* Membership Trends */}
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">
+                    Membership Trends
+                  </h3>
+                  {membershipTrends.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={membershipTrends}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" />
+                        <YAxis />
+                        <Tooltip />
+                        <Line
+                          type="monotone"
+                          dataKey="count"
+                          stroke="#8b5cf6"
+                          strokeWidth={2}
+                          dot={{ fill: "#8b5cf6", r: 4 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-gray-500 text-center py-12">
+                      No data available
+                    </p>
+                  )}
+                </div>
+
+                {/* Members by Purok */}
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">
+                    Members by Purok
+                  </h3>
+                  {purokData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={purokData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="name"
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar
+                          dataKey="value"
+                          fill="#8b5cf6"
+                          radius={[8, 8, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-gray-500 text-center py-12">
+                      No data available
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* === Age Demographics & Recent Activities === */}

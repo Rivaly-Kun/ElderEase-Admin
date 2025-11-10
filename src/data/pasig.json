@@ -1,35 +1,14 @@
 {
   "National Capital Region": {
     "Metro Manila": {
-      "Pasig City": [
-        "Bagong Ilog",
-        "Bagong Katipunan",
-        "Bambang",
-        "Buting",
-        "Caniogan",
-        "Kapitolyo",
-        "Malinao",
-        "Oranbo",
-        "Palatiw",
-        "Pineda",
-        "Sagad",
-        "San Antonio",
-        "San Joaquin",
-        "San Jose",
-        "San Nicolas",
-        "Santa Cruz",
-        "Santa Lucia",
-        "Santa Rosa",
-        "Santo Tomas",
-        "Santolan",
-        "Sumilang",
-        "Ugong",
-        "Pinagbuhatan",
-        "Maybunga",
-        "Manggahan",
-        "Rosario",
-        "Dela Paz"
-      ]
+      "Pasig City": {
+        "Pinagbuhatan": [
+          "Purok Catleya",
+          "Purok Jasmin",
+          "Purok Rosal",
+          "Purok Velasco Ave / Urbano"
+        ]
+      }
     }
   }
 }

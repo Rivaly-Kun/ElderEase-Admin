@@ -10,7 +10,9 @@ import {
   FileText,
   Image,
   File,
+  Eye,
 } from "lucide-react";
+import * as mammoth from "mammoth";
 import { storage, db } from "../services/firebase";
 import {
   ref as storageRef,
@@ -83,6 +85,11 @@ const MemberDocumentManager = ({
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingDocument, setViewingDocument] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  const [wordDocHtml, setWordDocHtml] = useState(null);
   const [deletingId, setDeletingId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -293,6 +300,77 @@ const MemberDocumentManager = ({
     document.body.removeChild(link);
   };
 
+  const handleViewDocument = async (doc) => {
+    if (!doc?.downloadURL) return;
+
+    setPreviewLoading(true);
+    setViewingDocument(doc);
+    setShowViewModal(true);
+    setPreviewBlobUrl(null);
+    setWordDocHtml(null);
+
+    try {
+      // Fetch the file as a blob
+      const response = await fetch(doc.downloadURL);
+      if (!response.ok) throw new Error("Failed to fetch document");
+
+      const blob = await response.blob();
+
+      // Check if it's a Word document
+      const isWordDoc = doc.name?.toLowerCase().match(/\.(doc|docx)$/);
+
+      if (isWordDoc) {
+        // Convert Word doc to HTML using mammoth
+        try {
+          const arrayBuffer = await blob.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          console.log("Mammoth conversion result:", result);
+          console.log("HTML length:", result.value?.length);
+          if (result.value && result.value.trim().length > 0) {
+            setWordDocHtml(result.value);
+          } else {
+            console.warn("Mammoth returned empty HTML");
+            // Fallback to blob URL for download
+            const blobUrl = URL.createObjectURL(blob);
+            setPreviewBlobUrl(blobUrl);
+          }
+        } catch (mammothError) {
+          console.error("Mammoth conversion error:", mammothError);
+          // Fallback to blob URL
+          const blobUrl = URL.createObjectURL(blob);
+          setPreviewBlobUrl(blobUrl);
+        }
+      } else {
+        // For other types (PDF, images), use blob URL
+        const blobUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl(blobUrl);
+      }
+    } catch (err) {
+      console.error("Error fetching document:", err);
+      setError("Failed to load document preview");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const getFilePreviewType = (contentType, fileName) => {
+    if (!contentType && fileName) {
+      const ext = fileName.toLowerCase().split(".").pop();
+      if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) return "image";
+      if (ext === "pdf") return "pdf";
+      if (["doc", "docx", "txt"].includes(ext)) return "document";
+    }
+    if (contentType?.includes("image")) return "image";
+    if (contentType?.includes("pdf")) return "pdf";
+    if (
+      contentType?.includes("word") ||
+      contentType?.includes("document") ||
+      contentType?.includes("text")
+    )
+      return "document";
+    return "other";
+  };
+
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center h-96">
@@ -472,13 +550,22 @@ const MemberDocumentManager = ({
 
                               <div className="flex items-center gap-2 ml-4 flex-shrink-0">
                                 {doc.downloadURL && (
-                                  <button
-                                    onClick={() => handleDownload(doc)}
-                                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
-                                    title="Download"
-                                  >
-                                    <Download className="w-5 h-5" />
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={() => handleViewDocument(doc)}
+                                      className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition"
+                                      title="View document"
+                                    >
+                                      <Eye className="w-5 h-5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDownload(doc)}
+                                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition"
+                                      title="Download"
+                                    >
+                                      <Download className="w-5 h-5" />
+                                    </button>
+                                  </>
                                 )}
                                 <button
                                   onClick={() => handleDelete(doc)}
@@ -690,6 +777,184 @@ const MemberDocumentManager = ({
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Document Modal */}
+      {showViewModal && viewingDocument && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2">
+          <div className="bg-white rounded-2xl shadow-2xl w-full h-full max-w-7xl max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-8 py-6 border-b bg-gradient-to-r from-purple-600 to-blue-600 flex items-center justify-between text-white">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-2xl font-bold truncate">
+                  📄 {viewingDocument.name}
+                </h2>
+                <p className="text-purple-100 mt-1 text-sm">
+                  {formatBytes(viewingDocument.size)} • Uploaded{" "}
+                  {formatDate(viewingDocument.uploadedAt)}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                  setShowViewModal(false);
+                  setViewingDocument(null);
+                  setPreviewBlobUrl(null);
+                  setWordDocHtml(null);
+                }}
+                className="p-2 hover:bg-white/20 rounded-lg transition flex-shrink-0"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Preview Content */}
+            <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center">
+              {previewLoading && (
+                <div className="flex flex-col items-center justify-center">
+                  <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-4"></div>
+                  <p className="text-gray-600 font-medium">
+                    Loading preview...
+                  </p>
+                </div>
+              )}
+              {!previewLoading &&
+                (() => {
+                  const previewType = getFilePreviewType(
+                    viewingDocument.contentType,
+                    viewingDocument.name
+                  );
+
+                  const isWordDoc = viewingDocument.name
+                    ?.toLowerCase()
+                    .match(/\.(doc|docx)$/);
+
+                  // Word document with HTML conversion
+                  if (isWordDoc && wordDocHtml) {
+                    return (
+                      <div className="w-full h-full overflow-auto bg-gray-100 py-8 flex justify-center">
+                        <div className="w-full max-w-5xl px-8">
+                          <div
+                            className="bg-white shadow-2xl rounded-lg w-full"
+                            style={{
+                              padding: "80px 96px",
+                              marginBottom: "32px",
+                            }}
+                          >
+                            <div
+                              className="max-w-none"
+                              dangerouslySetInnerHTML={{ __html: wordDocHtml }}
+                              style={{
+                                fontSize: "14px",
+                                lineHeight: "1.75",
+                                color: "#1f2937",
+                                fontFamily: "Calibri, 'Times New Roman', serif",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  } // Image preview
+                  if (previewType === "image" && previewBlobUrl) {
+                    return (
+                      <div className="w-full h-full flex items-center justify-center p-8">
+                        <img
+                          src={previewBlobUrl}
+                          alt={viewingDocument.name}
+                          className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                          onError={() => {
+                            setError("Unable to load image preview");
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  // PDF preview
+                  if (previewType === "pdf" && previewBlobUrl) {
+                    return (
+                      <div className="w-full h-full flex flex-col min-h-0">
+                        <iframe
+                          src={`${previewBlobUrl}#toolbar=1&navpanes=0&scrollbar=1`}
+                          className="w-full flex-1 min-h-0 border-0"
+                          title="PDF Preview"
+                        />
+                      </div>
+                    );
+                  }
+
+                  // Text/other documents
+                  if (previewType === "document") {
+                    return (
+                      <div className="w-full h-full flex items-center justify-center p-8">
+                        <div className="bg-white p-8 rounded-lg text-center shadow-lg max-w-sm">
+                          <FileText className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                          <h3 className="text-lg font-bold text-gray-900 mb-2">
+                            Text Document
+                          </h3>
+                          <p className="text-gray-600 mb-6">
+                            Click download to view this text file in your
+                            editor.
+                          </p>
+                          <a
+                            href={viewingDocument.downloadURL}
+                            download={viewingDocument.name}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
+                          >
+                            <Download className="w-5 h-5" />
+                            Download File
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Default fallback
+                  return (
+                    <div className="flex flex-col items-center justify-center text-gray-500 p-8">
+                      <File className="w-16 h-16 mb-4 text-gray-300" />
+                      <p className="text-lg font-medium mb-6">
+                        Preview not available for this file type
+                      </p>
+                      <a
+                        href={viewingDocument.downloadURL}
+                        download={viewingDocument.name}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-semibold"
+                      >
+                        <Download className="w-5 h-5" />
+                        Download File
+                      </a>
+                    </div>
+                  );
+                })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 py-6 border-t bg-gray-50 flex gap-3">
+              <button
+                onClick={() => {
+                  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                  setShowViewModal(false);
+                  setViewingDocument(null);
+                  setPreviewBlobUrl(null);
+                  setWordDocHtml(null);
+                }}
+                className="flex-1 px-6 py-3 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition font-semibold"
+              >
+                Close
+              </button>
+              <a
+                href={viewingDocument.downloadURL}
+                download={viewingDocument.name}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition font-semibold flex items-center justify-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                Download
+              </a>
             </div>
           </div>
         </div>

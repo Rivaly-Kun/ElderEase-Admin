@@ -11,6 +11,9 @@ import {
   RefreshCw,
   Search,
   HeartPulse,
+  Settings,
+  Clock,
+  X,
 } from "lucide-react";
 import { ref as dbRef, onValue, remove, update } from "firebase/database";
 import { db } from "../services/firebase";
@@ -18,7 +21,10 @@ import Sidebar from "../Components/Sidebar";
 import Header from "../Components/Header";
 import AddMemberModal from "../Components/AddMemberModal";
 import MemberProfileModal from "../Components/MemberProfileModal";
+import MembershipRequestModal from "../Components/MembershipRequestModal";
 import AIPoweredScanner from "../Components/QrScanner";
+import IDSettings from "../Components/IDSettings";
+import PrintModule from "../Components/PrintModule";
 import { useMemberSearch } from "../Context/MemberSearchContext";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
@@ -36,12 +42,22 @@ const SeniorCitizenManagement = () => {
   const [loading, setLoading] = useState(true);
   const [paymentsData, setPaymentsData] = useState([]);
   const [showScanner, setShowScanner] = useState(false);
+  const [showIDSettings, setShowIDSettings] = useState(false);
+  const [showPrintModule, setShowPrintModule] = useState(false);
+
+  // Membership Requests
+  const [membershipRequests, setMembershipRequests] = useState([]);
+  const [showRequestsCenter, setShowRequestsCenter] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [selectedAgeRange, setSelectedAgeRange] = useState("");
   const [selectedGender, setSelectedGender] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
+  const [selectedPurok, setSelectedPurok] = useState("");
+  const [surnameSortOrder, setSurnameSortOrder] = useState(""); // "asc" or "desc"
 
   const { currentUser, loading: currentUserLoading } = useResolvedCurrentUser();
   const actorId = currentUser?.uid || currentUser?.id || "unknown";
@@ -223,6 +239,34 @@ const SeniorCitizenManagement = () => {
     return () => unsubscribe();
   }, []);
 
+  // Fetch membership requests
+  useEffect(() => {
+    const requestsRef = dbRef(db, "createaccreq");
+
+    const unsubscribe = onValue(
+      requestsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const requestsArray = Object.keys(data).map((key) => ({
+            id: key,
+            ...data[key],
+          }));
+          // Sort by newest first
+          requestsArray.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setMembershipRequests(requestsArray);
+        } else {
+          setMembershipRequests([]);
+        }
+      },
+      (error) => {
+        console.error("Error fetching requests:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   // Fetch payments
   useEffect(() => {
     const paymentsRef = dbRef(db, "payments");
@@ -254,7 +298,24 @@ const SeniorCitizenManagement = () => {
     return parts.length >= 2 ? parts[parts.length - 2].trim() : "N/A";
   };
 
+  const extractPurok = (member) => {
+    // Check if purok is stored as separate field
+    if (member.purok) return member.purok;
+    // Otherwise try to extract from address - it should be in position [0] if format is "Purok, Street, Barangay"
+    if (member.address) {
+      const parts = member.address.split(",");
+      return parts.length >= 1 ? parts[0].trim() : "N/A";
+    }
+    return "N/A";
+  };
+
   const isDeceased = (member) => member.deceased === true;
+
+  const handleReviewRequest = (request) => {
+    setSelectedRequest(request);
+    setShowRequestsCenter(false);
+    setShowRequestModal(true);
+  };
 
   // CSV Export Handler
   const handleExportCSV = () => {
@@ -405,52 +466,73 @@ const SeniorCitizenManagement = () => {
   };
 
   // Filter logic
-  const filteredMembers = members.filter((member) => {
-    const matchesTab =
-      activeTab === "active"
-        ? !member.archived && !isDeceased(member)
-        : activeTab === "archived"
-        ? member.archived === true && !isDeceased(member)
-        : activeTab === "deceased"
-        ? isDeceased(member)
-        : true;
+  const filteredMembers = members
+    .filter((member) => {
+      const matchesTab =
+        activeTab === "active"
+          ? !member.archived && !isDeceased(member)
+          : activeTab === "archived"
+          ? member.archived === true && !isDeceased(member)
+          : activeTab === "deceased"
+          ? isDeceased(member)
+          : true;
 
-    const matchesSearch =
-      `${member.firstName} ${member.lastName} ${member.oscaID} ${member.contactNum}`
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase());
+      const matchesSearch =
+        `${member.firstName} ${member.lastName} ${member.oscaID} ${member.contactNum}`
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase());
 
-    const matchesBarangay =
-      !selectedBarangay || extractBarangay(member.address) === selectedBarangay;
+      const matchesBarangay =
+        !selectedBarangay ||
+        extractBarangay(member.address) === selectedBarangay;
 
-    const matchesAgeRange =
-      !selectedAgeRange ||
-      (selectedAgeRange === "60-69" && member.age >= 60 && member.age <= 69) ||
-      (selectedAgeRange === "70-79" && member.age >= 70 && member.age <= 79) ||
-      (selectedAgeRange === "80+" && member.age >= 80);
+      const matchesAgeRange =
+        !selectedAgeRange ||
+        (selectedAgeRange === "60-69" &&
+          member.age >= 60 &&
+          member.age <= 69) ||
+        (selectedAgeRange === "70-79" &&
+          member.age >= 70 &&
+          member.age <= 79) ||
+        (selectedAgeRange === "80+" && member.age >= 80);
 
-    const matchesGender =
-      !selectedGender ||
-      (selectedGender === "Male" && member.gender === "Male") ||
-      (selectedGender === "Female" && member.gender === "Female");
+      const matchesGender =
+        !selectedGender ||
+        (selectedGender === "Male" && member.gender === "Male") ||
+        (selectedGender === "Female" && member.gender === "Female");
 
-    const matchesStatus =
-      !selectedStatus ||
-      (selectedStatus === "Active" &&
-        !member.archived &&
-        !isDeceased(member)) ||
-      (selectedStatus === "Archived" && member.archived === true) ||
-      (selectedStatus === "Deceased" && isDeceased(member));
+      const matchesStatus =
+        !selectedStatus ||
+        (selectedStatus === "Active" &&
+          !member.archived &&
+          !isDeceased(member)) ||
+        (selectedStatus === "Archived" && member.archived === true) ||
+        (selectedStatus === "Deceased" && isDeceased(member));
 
-    return (
-      matchesTab &&
-      matchesSearch &&
-      matchesBarangay &&
-      matchesAgeRange &&
-      matchesGender &&
-      matchesStatus
-    );
-  });
+      const matchesPurok =
+        !selectedPurok || extractPurok(member) === selectedPurok;
+
+      return (
+        matchesTab &&
+        matchesSearch &&
+        matchesBarangay &&
+        matchesAgeRange &&
+        matchesGender &&
+        matchesStatus &&
+        matchesPurok
+      );
+    })
+    .sort((a, b) => {
+      // Apply surname sorting if selected
+      if (surnameSortOrder) {
+        const surnameA = (a.lastName || "").toLowerCase();
+        const surnameB = (b.lastName || "").toLowerCase();
+        return surnameSortOrder === "asc"
+          ? surnameA.localeCompare(surnameB)
+          : surnameB.localeCompare(surnameA);
+      }
+      return 0;
+    });
 
   // Actions
   const handleViewProfile = (member) => {
@@ -610,6 +692,18 @@ const SeniorCitizenManagement = () => {
             </div>
             <div className="flex items-center gap-3">
               <button
+                onClick={() => setShowRequestsCenter(true)}
+                className="relative px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-2"
+              >
+                <Clock className="w-4 h-4 text-purple-600" />
+                <span>Membership Requests</span>
+                {membershipRequests.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    {membershipRequests.length}
+                  </span>
+                )}
+              </button>
+              <button
                 onClick={() => setShowAddModal(true)}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
               >
@@ -629,6 +723,20 @@ const SeniorCitizenManagement = () => {
               >
                 <Printer className="w-4 h-4" />
                 Export CSV
+              </button>
+              <button
+                onClick={() => setShowPrintModule(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Report
+              </button>
+              <button
+                onClick={() => setShowIDSettings(true)}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                ID Settings
               </button>
             </div>
           </div>
@@ -692,14 +800,17 @@ const SeniorCitizenManagement = () => {
               onChange={(e) => setSelectedBarangay(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400"
             >
-              <option value="">All Barangays</option>
-              {[...new Set(members.map((m) => extractBarangay(m.address)))].map(
-                (bgy, i) => (
-                  <option key={i} value={bgy}>
-                    {bgy}
-                  </option>
-                )
-              )}
+              <option value="">All Puroks</option>
+              {[
+                "Purok Catleya",
+                "Purok Jasmin",
+                "Purok Rosal",
+                "Purok Velasco Ave / Urbano",
+              ].map((purok, i) => (
+                <option key={i} value={purok}>
+                  {purok}
+                </option>
+              ))}
             </select>
 
             <select
@@ -723,6 +834,33 @@ const SeniorCitizenManagement = () => {
               <option value="80+">80+</option>
             </select>
 
+            {/* Purok Filter */}
+            <select
+              value={selectedPurok}
+              onChange={(e) => setSelectedPurok(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400"
+            >
+              <option value="">All Puroks</option>
+              {[...new Set(members.map((m) => extractPurok(m)))]
+                .filter((p) => p !== "N/A")
+                .map((purok, i) => (
+                  <option key={i} value={purok}>
+                    {purok}
+                  </option>
+                ))}
+            </select>
+
+            {/* Surname Sorting */}
+            <select
+              value={surnameSortOrder}
+              onChange={(e) => setSurnameSortOrder(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400"
+            >
+              <option value="">Sort by Surname</option>
+              <option value="asc">A - Z</option>
+              <option value="desc">Z - A</option>
+            </select>
+
             <button
               onClick={() => {
                 setSearchQuery("");
@@ -730,6 +868,8 @@ const SeniorCitizenManagement = () => {
                 setSelectedGender("");
                 setSelectedAgeRange("");
                 setSelectedStatus("");
+                setSelectedPurok("");
+                setSurnameSortOrder("");
               }}
               className="px-4 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-semibold hover:bg-red-200 transition flex items-center gap-2"
             >
@@ -808,10 +948,10 @@ const SeniorCitizenManagement = () => {
                           </td>
                           <td className="px-4 py-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {`${member.firstName || ""} ${
-                                member.middleName || ""
-                              } ${member.lastName || ""} ${
+                              {`${member.lastName || ""} ${
                                 member.suffix || ""
+                              } ${member.firstName || ""} ${
+                                member.middleName || ""
                               }`.trim()}
                             </div>
                             <div className="text-xs text-gray-500">
@@ -940,12 +1080,136 @@ const SeniorCitizenManagement = () => {
         />
       )}
 
+      {/* Membership Requests Center */}
+      {showRequestsCenter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Pending Membership Requests
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Review incoming applications and onboard qualified seniors
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowRequestsCenter(false);
+                  setSelectedRequest(null);
+                }}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition"
+                aria-label="Close membership requests"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 overflow-y-auto">
+              {membershipRequests.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-16 text-gray-500">
+                  <Clock className="w-12 h-12 text-purple-300 mb-4" />
+                  <p className="text-lg font-semibold">No pending requests</p>
+                  <p className="text-sm mt-1">
+                    All membership applications have been processed.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {membershipRequests.map((request) => (
+                    <div
+                      key={request.id}
+                      className="border border-gray-200 rounded-xl p-4 bg-gray-50 hover:bg-white transition shadow-sm hover:shadow-md"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center font-bold text-purple-600">
+                            {request.firstName?.[0]}
+                            {request.lastName?.[0]}
+                          </div>
+                          <div>
+                            <p className="text-lg font-semibold text-gray-800">
+                              {request.firstName} {request.lastName}
+                            </p>
+                            <p className="text-sm text-gray-500 break-all">
+                              {request.email || "No email provided"}
+                            </p>
+                            <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-500">
+                              {request.contactNum && (
+                                <span className="px-2 py-1 bg-white rounded-full border border-gray-200">
+                                  {request.contactNum}
+                                </span>
+                              )}
+                              {request.age && (
+                                <span className="px-2 py-1 bg-white rounded-full border border-gray-200">
+                                  Age {request.age}
+                                </span>
+                              )}
+                              {request.createdAt && (
+                                <span className="px-2 py-1 bg-white rounded-full border border-gray-200">
+                                  {new Date(request.createdAt).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 self-start md:self-center">
+                          <button
+                            onClick={() => handleReviewRequest(request)}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-semibold"
+                          >
+                            Review & Accept
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Member Modal */}
       {showAddModal && (
         <AddMemberModal
           isOpen={showAddModal}
           onClose={() => setShowAddModal(false)}
           onMemberAdded={() => console.log("New member added successfully")}
+        />
+      )}
+
+      {/* ID Settings Modal */}
+      {showIDSettings && (
+        <IDSettings
+          isOpen={showIDSettings}
+          onClose={() => setShowIDSettings(false)}
+        />
+      )}
+
+      {/* Print Module Modal */}
+      {showPrintModule && (
+        <PrintModule
+          isOpen={showPrintModule}
+          onClose={() => setShowPrintModule(false)}
+          members={filteredMembers}
+        />
+      )}
+
+      {/* Membership Request Modal */}
+      {selectedRequest && (
+        <MembershipRequestModal
+          isOpen={showRequestModal}
+          onClose={() => {
+            setShowRequestModal(false);
+            setSelectedRequest(null);
+          }}
+          requestId={selectedRequest.id}
+          requestData={selectedRequest}
+          onAccepted={() => {
+            setShowRequestsCenter(true);
+          }}
         />
       )}
     </div>

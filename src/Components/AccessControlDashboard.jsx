@@ -58,12 +58,18 @@ const AccessControlDashboard = ({ currentUser, initialSelectedAuditLog }) => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // Fetch users count
+        // Fetch users count and filter for officers
         const usersRef = ref(db, "users");
         const usersSnapshot = await get(usersRef);
-        const usersCount = usersSnapshot.exists()
-          ? Object.keys(usersSnapshot.val()).length
-          : 0;
+        let officersCount = 0;
+
+        if (usersSnapshot.exists()) {
+          const users = usersSnapshot.val();
+          officersCount = Object.values(users).filter((user) => {
+            const roleValue = String(user.role || "").trim();
+            return roleValue !== "";
+          }).length;
+        }
 
         // Fetch roles count
         const rolesRef = ref(db, "roles");
@@ -79,11 +85,20 @@ const AccessControlDashboard = ({ currentUser, initialSelectedAuditLog }) => {
           ? Object.keys(auditSnapshot.val()).length
           : 0;
 
+        console.log(
+          "📊 Dashboard Stats - Officers:",
+          officersCount,
+          "Roles:",
+          rolesCount,
+          "Audits:",
+          auditCount
+        );
+
         // Update stats
         setStats((prevStats) =>
           prevStats.map((stat) => {
-            if (stat.title === "Total Users") {
-              return { ...stat, value: usersCount.toString() };
+            if (stat.title === "Total Officers") {
+              return { ...stat, value: officersCount.toString() };
             }
             if (stat.title === "Active Roles") {
               return { ...stat, value: rolesCount.toString() };

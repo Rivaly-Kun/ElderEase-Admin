@@ -903,10 +903,8 @@ const NotificationDashboard = ({ currentUser }) => {
         location: data.location || null,
       });
 
-      setEvents((prevEvents) => {
-        const combined = [{ id: eventId, ...data }, ...prevEvents];
-        return sortEventsByDateDesc(combined);
-      });
+      // Real-time listener will automatically update the events list
+      // No need to manually update state here to avoid double entries
 
       setEventForm({
         title: "",

@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  RefreshCw,
 } from "lucide-react";
 import { createAuditLogger } from "../utils/AuditLogger";
 
@@ -135,23 +136,27 @@ const OfficerManagement = ({ currentUser }) => {
             }
           );
 
+          console.log("🔍 Raw Users from Firebase:", rawUsers);
+
+          // Filter users that have a role (either ID or name)
+          // Include all users with a role field that's not empty
           const filteredUsers = rawUsers.filter((userRecord) => {
             const roleValue = String(userRecord.role || "").trim();
+
+            // Only exclude if role is completely empty
             if (!roleValue) {
               return false;
             }
 
-            if (validRoleIdentifiers.size > 0) {
-              return validRoleIdentifiers.has(roleValue);
-            }
-
-            return ["Officer", "Admin", "Viewer", "Super Admin"].includes(
-              roleValue
-            );
+            // Accept any user with a non-empty role
+            // This includes role IDs (like "1762140124152") and role names (like "Admin")
+            return true;
           });
 
+          console.log("📋 Filtered Officers:", filteredUsers);
           setOfficers(filteredUsers);
         } else {
+          console.log("⚠️ No users data found in Firebase");
           setOfficers([]);
         }
       } catch (error) {
@@ -412,26 +417,67 @@ const OfficerManagement = ({ currentUser }) => {
             Manage officers, admins, and their access levels
           </p>
         </div>
-        <button
-          onClick={() => {
-            setEditingOfficer(null);
-            setFormData({
-              email: "",
-              displayName: "",
-              role: "Officer",
-              status: "active",
-              department: "",
-              contactNumber: "",
-              password: "",
-              confirmPassword: "",
-            });
-            setShowModal(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
-        >
-          <Plus size={20} />
-          Add Officer
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              setLoading(true);
+              try {
+                const usersRef = ref(db, "users");
+                const snapshot = await get(usersRef);
+                if (snapshot.exists()) {
+                  const rawUsers = Object.entries(snapshot.val()).map(
+                    ([id, data]) => {
+                      const { password, ...rest } = data || {};
+                      return {
+                        id,
+                        ...rest,
+                        status: sanitizeStatus(rest.status),
+                      };
+                    }
+                  );
+
+                  const filteredUsers = rawUsers.filter((userRecord) => {
+                    const roleValue = String(userRecord.role || "").trim();
+                    return roleValue !== "";
+                  });
+
+                  console.log("🔄 Refreshed Officers:", filteredUsers);
+                  setOfficers(filteredUsers);
+                } else {
+                  setOfficers([]);
+                }
+              } catch (error) {
+                console.error("Error refreshing data:", error);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-semibold"
+          >
+            <RefreshCw size={20} />
+            Refresh
+          </button>
+          <button
+            onClick={() => {
+              setEditingOfficer(null);
+              setFormData({
+                email: "",
+                displayName: "",
+                role: "Officer",
+                status: "active",
+                department: "",
+                contactNumber: "",
+                password: "",
+                confirmPassword: "",
+              });
+              setShowModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
+          >
+            <Plus size={20} />
+            Add Officer
+          </button>
+        </div>
       </div>
 
       {/* Table */}

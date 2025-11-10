@@ -29,7 +29,6 @@ const deriveSuperAdminFlag = (roleName = "") => {
 const normalizeModulePermissions = (rawPermissions = {}) => {
   const normalized = {};
 
-  // Process all modules from Firebase with their explicit view flags
   Object.entries(rawPermissions || {}).forEach(([moduleId, value]) => {
     let viewAllowed = false;
 
@@ -47,11 +46,9 @@ const normalizeModulePermissions = (rawPermissions = {}) => {
       viewAllowed = Boolean(value);
     }
 
-    // Add ALL modules with their actual permission state (true or false)
     normalized[moduleId] = { view: viewAllowed };
   });
 
-  // Ensure every navigation module is represented, even if missing from Firebase
   NAVIGATION_MODULES.forEach(({ id }) => {
     if (!id || id === "access_control") {
       return;
@@ -65,9 +62,52 @@ const normalizeModulePermissions = (rawPermissions = {}) => {
   return normalized;
 };
 
+const resolveModuleKey = (rawId) => {
+  if (!rawId) {
+    return null;
+  }
+
+  const rawString = String(rawId).trim();
+  if (!rawString) {
+    return null;
+  }
+
+  const lower = rawString.toLowerCase();
+  const matchedModule = NAVIGATION_MODULES.find((module) => {
+    const idMatch = module.id?.toLowerCase() === lower;
+    const labelMatch = module.label?.toLowerCase() === lower;
+    return idMatch || labelMatch;
+  });
+
+  if (matchedModule) {
+    return matchedModule.id;
+  }
+
+  return rawString.replace(/\s+/g, "_").toLowerCase();
+};
+
+const normalizeModuleKeys = (permissionsMap = {}) => {
+  const remapped = {};
+  Object.entries(permissionsMap || {}).forEach(([rawModuleId, value]) => {
+    const resolvedKey = resolveModuleKey(rawModuleId);
+    if (resolvedKey && resolvedKey !== "access_control") {
+      remapped[resolvedKey] = value;
+    }
+  });
+  return remapped;
+};
+
+const convertLegacyModules = (legacyList = []) => {
+  return legacyList.reduce((accumulator, rawModuleId) => {
+    const resolvedKey = resolveModuleKey(rawModuleId);
+    if (resolvedKey && resolvedKey !== "access_control") {
+      accumulator[resolvedKey] = { view: true };
+    }
+    return accumulator;
+  }, {});
+};
+
 const defaultPermissionsForSuperAdmin = () => {
-  // SuperAdmin doesn't need explicit permissions in the map
-  // Access is granted through the isSuperAdmin flag in hasModuleAccess
   return {};
 };
 
@@ -83,48 +123,82 @@ export const AuthProvider = ({ children }) => {
 
   const loadRolePermissions = async (roleName) => {
     if (!roleName) {
+      console.log("[AUTH] No role name provided, clearing permissions");
       setRolePermissions({});
       return;
     }
 
     if (deriveSuperAdminFlag(roleName)) {
+      console.log("[AUTH] Super Admin detected, granting all access");
       setRolePermissions(defaultPermissionsForSuperAdmin());
       return;
     }
 
+    console.log("[AUTH] Loading permissions for role:", roleName);
     try {
       setLoading(true);
       const normalizedKey = normalizeRoleKey(roleName);
+      console.log("[AUTH] Normalized role key:", normalizedKey);
       const directRoleRef = ref(db, `roles/${normalizedKey}`);
       let snapshot = await get(directRoleRef);
 
       if (!snapshot.exists()) {
+        console.log(
+          "[AUTH] Role not found at normalized path, searching all roles..."
+        );
         const rolesRef = ref(db, "roles");
         const rolesSnapshot = await get(rolesRef);
         if (rolesSnapshot.exists()) {
-          const rolesData = rolesSnapshot.val();
+          const rolesData = rolesSnapshot.val() || {};
           const matchedEntry = Object.entries(rolesData).find(
             ([, value]) =>
               (value?.roleName || "").trim().toLowerCase() ===
               roleName.trim().toLowerCase()
           );
           if (matchedEntry) {
+            console.log("[AUTH] ✅ Role found by name match:", matchedEntry[0]);
             snapshot = { exists: () => true, val: () => matchedEntry[1] };
           }
         }
+      } else {
+        console.log("[AUTH] ✅ Role found at normalized path");
       }
 
-      if (snapshot?.exists()) {
-        const roleData = snapshot.val();
-        setRolePermissions(
-          normalizeModulePermissions(roleData.modulePermissions || {})
+      if (snapshot.exists()) {
+        const roleData = snapshot.val() || {};
+        console.log("[AUTH] Role data retrieved:", {
+          roleName: roleData?.roleName,
+          modules: roleData?.modules,
+          modulePermissions: roleData?.modulePermissions,
+        });
+
+        let modulePermissions = roleData?.modulePermissions;
+
+        if (
+          (!modulePermissions || Object.keys(modulePermissions).length === 0) &&
+          Array.isArray(roleData?.modules)
+        ) {
+          console.log(
+            "[AUTH] Converting legacy modules list to permissions map"
+          );
+          modulePermissions = convertLegacyModules(roleData.modules);
+          console.log("[AUTH] Converted legacy modules:", modulePermissions);
+        }
+
+        const remappedPermissions = normalizeModuleKeys(
+          modulePermissions || {}
         );
+        const normalized = normalizeModulePermissions(remappedPermissions);
+        console.log("[AUTH] ✅ Normalized module permissions:", normalized);
+        setRolePermissions(normalized);
       } else {
-        // Role not found - set empty permissions (deny all access)
+        console.log(
+          "[AUTH] ❌ Role not found - setting empty permissions (deny all)"
+        );
         setRolePermissions({});
       }
     } catch (error) {
-      console.error("Failed to load role permissions", error);
+      console.error("[AUTH] ❌ Failed to load role permissions:", error);
       setRolePermissions({});
     } finally {
       setLoading(false);
@@ -225,8 +299,27 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
+  if (context) {
+    return context;
   }
-  return context;
+
+  // Graceful fallback for edge cases where the provider has not yet mounted
+  // (e.g., during hot module replacement or early render cycles).
+  const fallbackUser = getStoredSessionUser();
+  const fallbackIsSuperAdmin = deriveSuperAdminFlag(fallbackUser?.role);
+
+  const fallbackHasModuleAccess = () => fallbackIsSuperAdmin;
+  const fallbackGetFirstAccessiblePath = () =>
+    fallbackIsSuperAdmin ? "/dashboard" : null;
+
+  return {
+    user: fallbackUser,
+    setUser: () => {},
+    loading: false,
+    isSuperAdmin: fallbackIsSuperAdmin,
+    rolePermissions: {},
+    hasModuleAccess: fallbackHasModuleAccess,
+    getFirstAccessiblePath: fallbackGetFirstAccessiblePath,
+    logout: () => {},
+  };
 };
