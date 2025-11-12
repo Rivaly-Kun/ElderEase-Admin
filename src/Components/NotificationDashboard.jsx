@@ -40,6 +40,9 @@ import { createAuditLogger } from "../utils/AuditLogger";
 
 const UPCOMING_WINDOW_DAYS = 3;
 
+// Default puroks if no custom puroks are defined in settings
+const DEFAULT_PUROKS = ["Purok 1", "Purok 2", "Purok 3", "Purok 4", "Purok 5"];
+
 // Helpers to normalize message metadata so analytics stay consistent
 const SUCCESS_STATUS_SET = new Set(["success", "completed", "delivered"]);
 const FAILURE_STATUS_SET = new Set([
@@ -55,6 +58,9 @@ const normalizeStatusValue = (value) =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
 
 const normalizeBarangayName = (value) =>
+  typeof value === "string" ? value.trim() : "";
+
+const normalizePurokName = (value) =>
   typeof value === "string" ? value.trim() : "";
 
 const evaluateStatusList = (statuses) => {
@@ -207,6 +213,72 @@ const buildMessagesByBarangay = (history = [], members = []) => {
     .sort((a, b) => b.value - a.value);
 };
 
+const buildMessagesByPurok = (history = [], members = []) => {
+  const counts = {};
+
+  history.forEach((message) => {
+    if (!message) {
+      return;
+    }
+
+    if (
+      Array.isArray(message.recipientBreakdown) &&
+      message.recipientBreakdown.length > 0
+    ) {
+      message.recipientBreakdown.forEach((recipient) => {
+        const purok = normalizePurokName(recipient?.purok);
+        if (!purok) {
+          return;
+        }
+
+        counts[purok] = (counts[purok] || 0) + 1;
+      });
+      return;
+    }
+
+    const purok = normalizePurokName(message.purok);
+    if (purok) {
+      const increment = Number(message.recipientCount) || 1;
+      counts[purok] = (counts[purok] || 0) + increment;
+      return;
+    }
+
+    // Fallback: if no purok on message, count by member purok distribution
+    if (
+      Number(message.recipientCount) > 0 &&
+      Array.isArray(members) &&
+      members.length > 0
+    ) {
+      const membersPerPurok = {};
+      members.forEach((member) => {
+        const memberPurok = normalizePurokName(member.purok);
+        if (memberPurok) {
+          membersPerPurok[memberPurok] =
+            (membersPerPurok[memberPurok] || 0) + 1;
+        }
+      });
+
+      const totalMembers = Object.values(membersPerPurok).reduce(
+        (a, b) => a + b,
+        0
+      );
+      if (totalMembers > 0) {
+        Object.entries(membersPerPurok).forEach(([purokName, count]) => {
+          const proportion = count / totalMembers;
+          const purokShare = Math.round(message.recipientCount * proportion);
+          if (purokShare > 0) {
+            counts[purokName] = (counts[purokName] || 0) + purokShare;
+          }
+        });
+      }
+    }
+  });
+
+  return Object.entries(counts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+};
+
 const getEventTimestamp = (event) => {
   if (!event || !event.date) {
     return null;
@@ -283,9 +355,12 @@ const NotificationDashboard = ({ currentUser }) => {
 
   const [barangayDistribution, setBarangayDistribution] = useState([]);
   const [messagesByBarangay, setMessagesByBarangay] = useState([]);
+  const [purokDistribution, setPurokDistribution] = useState([]);
+  const [messagesByPurok, setMessagesByPurok] = useState([]);
   const [clicksendBalance, setClicksendBalance] = useState(null);
   const [checkingBalance, setCheckingBalance] = useState(false);
   const [allMembers, setAllMembers] = useState([]);
+  const [purokSettings, setPurokSettings] = useState(DEFAULT_PUROKS);
   const [memberSearchTerm, setMemberSearchTerm] = useState("");
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
@@ -387,7 +462,30 @@ const NotificationDashboard = ({ currentUser }) => {
             setMessageHistory(rawHistory);
           } else {
             setMessageHistory([]);
-            setMessagesByBarangay([]);
+            setMessagesByPurok([]);
+          }
+        }
+
+        // Fetch purok settings
+        const settingsRef = ref(db, "settings/idSettings/puroks");
+        try {
+          const settingsSnapshot = await get(settingsRef);
+          if (isMounted) {
+            if (settingsSnapshot.exists()) {
+              const purokArray = settingsSnapshot.val();
+              if (Array.isArray(purokArray)) {
+                setPurokSettings(purokArray);
+              } else {
+                setPurokSettings(DEFAULT_PUROKS);
+              }
+            } else {
+              setPurokSettings(DEFAULT_PUROKS);
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching purok settings:", err);
+          if (isMounted) {
+            setPurokSettings(DEFAULT_PUROKS);
           }
         }
 
@@ -396,39 +494,37 @@ const NotificationDashboard = ({ currentUser }) => {
         if (isMounted) {
           if (membersSnapshot.exists()) {
             const rawData = membersSnapshot.val();
-            const barangayCount = {};
+            const purokCount = {};
             const membersList = [];
 
             Object.entries(rawData).forEach(([memberId, member]) => {
               if (member && typeof member === "object") {
-                // For barangay chart
-                const normalizedBarangay = normalizeBarangayName(
-                  member.barangay
-                );
-                if (normalizedBarangay) {
-                  barangayCount[normalizedBarangay] =
-                    (barangayCount[normalizedBarangay] || 0) + 1;
+                // For purok chart
+                const normalizedPurok = normalizePurokName(member.purok);
+                if (normalizedPurok) {
+                  purokCount[normalizedPurok] =
+                    (purokCount[normalizedPurok] || 0) + 1;
                 }
                 // Store member data for search/selection
                 membersList.push({
                   id: memberId,
                   ...member,
-                  barangay: normalizedBarangay || member.barangay || null,
+                  purok: normalizedPurok || member.purok || null,
                 });
               }
             });
 
-            const chartData = Object.entries(barangayCount)
+            const chartData = Object.entries(purokCount)
               .map(([name, value]) => ({
                 name,
                 value,
               }))
               .sort((a, b) => b.value - a.value);
 
-            setBarangayDistribution(chartData);
+            setPurokDistribution(chartData);
             setAllMembers(membersList);
           } else {
-            setBarangayDistribution([]);
+            setPurokDistribution([]);
             setAllMembers([]);
           }
         }
@@ -467,6 +563,7 @@ const NotificationDashboard = ({ currentUser }) => {
 
   useEffect(() => {
     setMessagesByBarangay(buildMessagesByBarangay(messageHistory, allMembers));
+    setMessagesByPurok(buildMessagesByPurok(messageHistory, allMembers));
   }, [messageHistory, allMembers]);
 
   // Close member dropdown when clicking outside
@@ -1951,15 +2048,15 @@ const NotificationDashboard = ({ currentUser }) => {
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
               <h4 className="text-lg font-bold text-gray-900 mb-6">
-                🥧 Barangay Distribution
+                🥧 Purok Distribution
               </h4>
               <div className="space-y-4">
-                {barangayDistribution.length > 0 ? (
+                {purokDistribution.length > 0 ? (
                   <>
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie
-                          data={barangayDistribution}
+                          data={purokDistribution}
                           cx="50%"
                           cy="50%"
                           labelLine={false}
@@ -1980,7 +2077,7 @@ const NotificationDashboard = ({ currentUser }) => {
 
                     {/* Legend below chart - dynamic */}
                     <div className="grid grid-cols-2 gap-2 mt-4">
-                      {barangayDistribution.map((item, idx) => (
+                      {purokDistribution.map((item, idx) => (
                         <div
                           key={item.name}
                           className="flex items-center gap-2"
@@ -2007,7 +2104,7 @@ const NotificationDashboard = ({ currentUser }) => {
                   </>
                 ) : (
                   <div className="text-center py-8 text-gray-500">
-                    No barangay data available yet
+                    No purok data available yet
                   </div>
                 )}
               </div>
@@ -2015,12 +2112,12 @@ const NotificationDashboard = ({ currentUser }) => {
 
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
               <h4 className="text-lg font-bold text-gray-900 mb-6">
-                📊 Messages Sent by Barangay
+                📊 Messages Sent by Purok
               </h4>
-              {messagesByBarangay.length > 0 ? (
+              {messagesByPurok.length > 0 ? (
                 <ResponsiveContainer width="100%" height={320}>
                   <LineChart
-                    data={messagesByBarangay}
+                    data={messagesByPurok}
                     margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />

@@ -27,13 +27,6 @@ import { db } from "../services/firebase";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
-const PINAGBUHATAN_PUROKS = [
-  "Purok Catleya",
-  "Purok Jasmin",
-  "Purok Rosal",
-  "Purok Velasco Ave / Urbano",
-];
-
 const FieldGroup = ({ label, required = false, hint, children, className }) => (
   <div
     className={`flex flex-col gap-1 text-xs font-semibold text-gray-700 ${
@@ -166,7 +159,6 @@ const MembershipRequestModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [purok, setPurok] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -352,12 +344,6 @@ const MembershipRequestModal = ({
     }
 
     // Check required fields
-    if (!purok) {
-      console.warn("⚠️ [DEBUG] Validation failed: Purok not selected");
-      setError("Please select a Purok");
-      return false;
-    }
-
     if (!formData.dateIssue) {
       console.warn("⚠️ [DEBUG] Validation failed: Date of Issue missing");
       setError("Please set a Date of Issue");
@@ -391,8 +377,7 @@ const MembershipRequestModal = ({
     console.log("📋 [DEBUG] Form data:", formData);
     console.log("📧 [DEBUG] Email:", email);
     console.log("🔐 [DEBUG] Password:", password ? "***" : "MISSING");
-    console.log("🏘️ [DEBUG] Purok:", purok);
-    console.log("🆔 [DEBUG] OSCA ID:", (formData.oscaID || "").trim());
+    console.log(" [DEBUG] OSCA ID:", (formData.oscaID || "").trim());
 
     if (!validateForm()) return;
 
@@ -429,11 +414,10 @@ const MembershipRequestModal = ({
           .join(", "),
         age: parseInt(requestData?.age) || 60,
         barangay: "Pinagbuhatan",
-        purok,
         email, // store generated email
         password, // store generated password
         authUid: uid, // link to Firebase Auth
-        archived: 0,
+        archived: true,
         deceased: false,
         createdBy: actorLabel,
         createdById: actorId,
@@ -482,7 +466,6 @@ const MembershipRequestModal = ({
         if (onAccepted) onAccepted();
         onClose();
         // Reset form
-        setPurok("");
         setEmail("");
         setPassword("");
         setFormData({
@@ -937,22 +920,6 @@ const MembershipRequestModal = ({
                 />
               </FieldGroup>
 
-              <FieldGroup label="Purok" required>
-                <select
-                  value={purok}
-                  onChange={(e) => setPurok(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
-                  disabled={loading}
-                >
-                  <option value="">Select Purok</option>
-                  {PINAGBUHATAN_PUROKS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </FieldGroup>
-
               <FieldGroup label="Date of Issue" required>
                 <input
                   type="date"
@@ -976,6 +943,99 @@ const MembershipRequestModal = ({
               </FieldGroup>
             </div>
           </div>
+
+          {/* Submitted Documents */}
+          {requestData?.documents && requestData.documents.length > 0 && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200 mb-6">
+              <h3 className="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Submitted Documents
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {requestData.documents.map((doc, index) => {
+                  const isImage = doc.type && doc.type.startsWith("image/");
+                  const isPdf =
+                    doc.type === "application/pdf" ||
+                    doc.name?.toLowerCase().endsWith(".pdf");
+                  const isWord =
+                    doc.type?.includes("wordprocessingml") ||
+                    doc.type?.includes("msword") ||
+                    doc.name?.toLowerCase().endsWith(".docx") ||
+                    doc.name?.toLowerCase().endsWith(".doc");
+
+                  let icon, bgColor, borderColor;
+                  if (isPdf) {
+                    icon = "📄";
+                    bgColor = "bg-red-100";
+                    borderColor = "border-red-300";
+                  } else if (isWord) {
+                    icon = "📘";
+                    bgColor = "bg-blue-100";
+                    borderColor = "border-blue-300";
+                  } else if (isImage) {
+                    icon = "🖼️";
+                    bgColor = "bg-green-100";
+                    borderColor = "border-green-300";
+                  } else {
+                    icon = "📎";
+                    bgColor = "bg-gray-100";
+                    borderColor = "border-gray-300";
+                  }
+
+                  return (
+                    <div
+                      key={index}
+                      className={`${borderColor} border-2 rounded-lg overflow-hidden bg-white hover:shadow-xl transition-all duration-200 group cursor-pointer`}
+                    >
+                      {isImage ? (
+                        <div className="w-full h-48 bg-gray-200 overflow-hidden relative">
+                          <img
+                            src={doc.url}
+                            alt={doc.name}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity" />
+                        </div>
+                      ) : (
+                        <div
+                          className={`w-full h-48 ${bgColor} flex items-center justify-center flex-col gap-2`}
+                        >
+                          <span className="text-5xl">{icon}</span>
+                          <span className="text-xs font-semibold text-gray-600 text-center px-2">
+                            {isWord ? "Word" : isPdf ? "PDF" : "Document"}
+                          </span>
+                        </div>
+                      )}
+                      <div className="p-4 border-t border-gray-100">
+                        <p className="text-sm font-bold text-gray-800 truncate hover:text-clip">
+                          {doc.name}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-2">
+                          {new Date(doc.uploadedAt).toLocaleDateString(
+                            "en-US",
+                            {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            }
+                          )}
+                        </p>
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 mt-3 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-semibold rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
+                        >
+                          <span>View</span>
+                          <span>→</span>
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex gap-3 pt-4">

@@ -20,6 +20,10 @@ import {
   ChevronRight,
   Download,
   FileText,
+  Upload,
+  RefreshCw,
+  ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import {
   ref as dbRef,
@@ -28,8 +32,14 @@ import {
   update,
   remove,
   set,
+  get,
 } from "firebase/database";
-import { db } from "../services/firebase";
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
+import { db, storage } from "../services/firebase";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
@@ -67,6 +77,8 @@ const ServiceAndBenefitsTrack = () => {
   // Modals
   const [showAddAvailmentModal, setShowAddAvailmentModal] = useState(false);
   const [showViewDetailsModal, setShowViewDetailsModal] = useState(null);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [selectedRequestForView, setSelectedRequestForView] = useState(null);
   const [newAvailment, setNewAvailment] = useState({
     oscaID: "",
     benefitID: "",
@@ -74,6 +86,10 @@ const ServiceAndBenefitsTrack = () => {
     status: "Approved",
     notes: "",
   });
+
+  // File upload states
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -388,11 +404,39 @@ const ServiceAndBenefitsTrack = () => {
   };
 
   // Add new availment
+  // Handle file upload
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files);
+    setUploadedFiles((prev) => [...prev, ...files]);
+  };
+
+  // Remove file from upload list
+  const removeFile = (index) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const addAvailment = async () => {
     if (!newAvailment.oscaID || !newAvailment.benefitID) {
       alert("Please select member and benefit");
       return;
     }
+
+    // Check for duplicate pending requests
+    const existingPending = availments.find(
+      (a) =>
+        a.oscaID === newAvailment.oscaID &&
+        a.benefitID === newAvailment.benefitID &&
+        a.status === "Pending"
+    );
+
+    if (existingPending) {
+      alert(
+        "⚠️ This member already has a pending request for this benefit. Please wait for admin approval."
+      );
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
       const member = seniors.find((s) => s.oscaID === newAvailment.oscaID);
@@ -400,8 +444,41 @@ const ServiceAndBenefitsTrack = () => {
         (b) => b.firebaseKey === newAvailment.benefitID
       );
 
+      const timestamp = Date.now();
+      const referenceNumber = `BR-${Math.floor(Math.random() * 100000000)}`;
+
+      // Upload files to Firebase Storage if any
+      let documentURLs = [];
+      if (uploadedFiles.length > 0) {
+        const uploadPromises = uploadedFiles.map(async (file, index) => {
+          const fileRef = storageRef(
+            storage,
+            `benefitRequests/${member.oscaID}/req_${timestamp}_${index}_${file.name}`
+          );
+          await uploadBytes(fileRef, file);
+          const url = await getDownloadURL(fileRef);
+          return {
+            name: file.name,
+            type: file.type,
+            url: url,
+            uploadedAt: new Date().toISOString(),
+          };
+        });
+        documentURLs = await Promise.all(uploadPromises);
+      }
+
+      // Check if this is a reapplication (updating rejected request)
+      const existingRejected = availments
+        .filter(
+          (a) =>
+            a.oscaID === newAvailment.oscaID &&
+            a.benefitID === newAvailment.benefitID &&
+            a.status === "Rejected"
+        )
+        .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
       const availmentsRef = dbRef(db, "availments");
-      const timestamp = new Date().toISOString();
+      const timestampISO = new Date().toISOString();
       const availmentPayload = {
         ...newAvailment,
         firstName: member?.firstName,
@@ -409,27 +486,51 @@ const ServiceAndBenefitsTrack = () => {
         memberFirebaseKey: member?.firebaseKey,
         benefitName: benefit?.benefitName,
         cashValue: benefit?.cashValue,
-        dateCreated: timestamp,
+        dateCreated: timestampISO,
+        dateSubmitted: timestampISO,
+        referenceNumber: existingRejected?.referenceNumber || referenceNumber,
+        documents: documentURLs.length > 0 ? documentURLs : null,
+        isReapplication: !!existingRejected,
+        previousRejectionDate: existingRejected?.date || null,
+        reapplicationCount: (existingRejected?.reapplicationCount || 0) + 1,
       };
 
-      const newAvailmentRef = push(availmentsRef);
-      await set(newAvailmentRef, availmentPayload);
+      // If reapplying, update the existing rejected request
+      if (existingRejected) {
+        const updateRef = dbRef(
+          db,
+          `availments/${existingRejected.firebaseKey}`
+        );
+        await set(updateRef, availmentPayload);
+        alert(
+          `✅ Reapplication recorded successfully!\n\nReference: ${availmentPayload.referenceNumber}\n\nPrevious rejected request has been updated.`
+        );
+      } else {
+        const newAvailmentRef = push(availmentsRef);
+        await set(newAvailmentRef, availmentPayload);
 
-      await auditLogger.logAction("CREATE", "Benefit Availments", {
-        recordId: newAvailmentRef.key,
-        oscaID: newAvailment.oscaID,
-        memberName: member
-          ? `${member.firstName || ""} ${member.lastName || ""}`.trim()
-          : null,
-        benefitFirebaseKey: newAvailment.benefitID,
-        benefitName: benefit?.benefitName || null,
-        cashValue: benefit?.cashValue ?? null,
-        status: newAvailment.status,
-        notesLength: newAvailment.notes ? newAvailment.notes.length : 0,
-        createdAt: timestamp,
-      });
+        await auditLogger.logAction("CREATE", "Benefit Availments", {
+          recordId: newAvailmentRef.key,
+          oscaID: newAvailment.oscaID,
+          memberName: member
+            ? `${member.firstName || ""} ${member.lastName || ""}`.trim()
+            : null,
+          benefitFirebaseKey: newAvailment.benefitID,
+          benefitName: benefit?.benefitName || null,
+          cashValue: benefit?.cashValue ?? null,
+          status: newAvailment.status,
+          referenceNumber,
+          hasDocuments: documentURLs.length > 0,
+          documentCount: documentURLs.length,
+          notesLength: newAvailment.notes ? newAvailment.notes.length : 0,
+          createdAt: timestampISO,
+        });
 
-      alert("Availment recorded successfully!");
+        alert(
+          `✅ Availment recorded successfully!\n\nReference: ${referenceNumber}`
+        );
+      }
+
       setNewAvailment({
         oscaID: "",
         benefitID: "",
@@ -437,10 +538,13 @@ const ServiceAndBenefitsTrack = () => {
         status: "Approved",
         notes: "",
       });
+      setUploadedFiles([]);
       setShowAddAvailmentModal(false);
     } catch (error) {
       console.error("Error adding availment:", error);
-      alert("Failed to record availment");
+      alert("Failed to record availment: " + error.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -803,7 +907,11 @@ const ServiceAndBenefitsTrack = () => {
                               ₱{item.cashValue?.toLocaleString()}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {new Date(item.date).toLocaleDateString()}
+                              {new Date(
+                                item.dateSubmitted ||
+                                  item.dateCreated ||
+                                  item.date
+                              ).toLocaleDateString()}
                             </p>
                           </div>
                         </div>
@@ -910,7 +1018,11 @@ const ServiceAndBenefitsTrack = () => {
                               {item.benefitName}
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-600">
-                              {new Date(item.date).toLocaleDateString()}
+                              {new Date(
+                                item.dateSubmitted ||
+                                  item.dateCreated ||
+                                  item.date
+                              ).toLocaleDateString()}
                             </td>
                             <td className="px-6 py-4">
                               <span
@@ -930,13 +1042,30 @@ const ServiceAndBenefitsTrack = () => {
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => setShowViewDetailsModal(item)}
-                                  className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"
-                                  title="View Details"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
+                                {item.status === "Pending" &&
+                                item.documents &&
+                                item.documents.length > 0 ? (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedRequestForView(item);
+                                      setShowDocumentModal(true);
+                                    }}
+                                    className="p-2 bg-yellow-100 text-yellow-600 rounded-lg hover:bg-yellow-200"
+                                    title="View Documents"
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      setShowViewDetailsModal(item)
+                                    }
+                                    className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"
+                                    title="View Details"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                )}
                                 <button
                                   onClick={() =>
                                     deleteAvailment(item.firebaseKey)
@@ -1242,6 +1371,64 @@ const ServiceAndBenefitsTrack = () => {
                 </select>
               </div>
 
+              {/* File Upload Section */}
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <Upload className="w-4 h-4 text-purple-600" />
+                  Upload Documents (Optional)
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-purple-500 transition-colors">
+                  <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-600 text-sm mb-3">
+                    Drag & drop files here, or click to browse
+                  </p>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="file-upload-availment"
+                    accept="image/*,.pdf,.doc,.docx"
+                  />
+                  <label
+                    htmlFor="file-upload-availment"
+                    className="inline-block px-4 py-2 bg-purple-600 text-white rounded-lg cursor-pointer hover:bg-purple-700 transition-colors text-sm font-medium"
+                  >
+                    Choose Files
+                  </label>
+                </div>
+
+                {/* Uploaded Files List */}
+                {uploadedFiles.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {uploadedFiles.map((file, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between bg-purple-50 rounded-lg p-3 border border-purple-200"
+                      >
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-5 h-5 text-purple-600" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {file.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {(file.size / 1024).toFixed(2)} KB
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="p-1 hover:bg-red-100 rounded-lg text-red-600 transition-colors"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-gray-700">
                   Notes
@@ -1261,9 +1448,17 @@ const ServiceAndBenefitsTrack = () => {
             <div className="bg-gray-50 px-8 py-6 flex gap-4">
               <button
                 onClick={addAvailment}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 font-semibold"
+                disabled={submitting}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Log Availment
+                {submitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    Submitting...
+                  </span>
+                ) : (
+                  "Log Availment"
+                )}
               </button>
               <button
                 onClick={() => setShowAddAvailmentModal(false)}
@@ -1404,15 +1599,16 @@ const ServiceAndBenefitsTrack = () => {
               <div className="border-t pt-4">
                 <p className="text-xs text-gray-600 font-semibold mb-2">Date</p>
                 <p className="text-lg font-bold text-gray-900">
-                  {new Date(showViewDetailsModal.date).toLocaleDateString(
-                    "en-US",
-                    {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    }
-                  )}
+                  {new Date(
+                    showViewDetailsModal.dateSubmitted ||
+                      showViewDetailsModal.dateCreated ||
+                      showViewDetailsModal.date
+                  ).toLocaleDateString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
                 </p>
               </div>
 
@@ -1690,6 +1886,285 @@ const ServiceAndBenefitsTrack = () => {
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Viewer Modal */}
+      {showDocumentModal && selectedRequestForView && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-6 rounded-t-2xl flex justify-between items-center z-10">
+              <div>
+                <h2 className="text-2xl font-bold">Request Details</h2>
+                <p className="text-sm opacity-90 mt-1">
+                  Reference: {selectedRequestForView.referenceNumber || "N/A"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDocumentModal(false);
+                  setSelectedRequestForView(null);
+                }}
+                className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Request Information */}
+              <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-6 border-2 border-yellow-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Member Name</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {selectedRequestForView.firstName}{" "}
+                      {selectedRequestForView.lastName}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      OSCA ID: {selectedRequestForView.oscaID}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Benefit Type</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {selectedRequestForView.benefitName}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Cash Value</p>
+                    <p className="text-lg font-bold text-yellow-600">
+                      ₱{selectedRequestForView.cashValue?.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Status</p>
+                    <span
+                      className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${
+                        selectedRequestForView.status === "Pending"
+                          ? "bg-yellow-200 text-yellow-800"
+                          : selectedRequestForView.status === "Approved"
+                          ? "bg-green-200 text-green-800"
+                          : "bg-red-200 text-red-800"
+                      }`}
+                    >
+                      {selectedRequestForView.status}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Submitted</p>
+                    <p className="text-sm text-gray-700">
+                      {selectedRequestForView.dateSubmitted
+                        ? new Date(
+                            selectedRequestForView.dateSubmitted
+                          ).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : selectedRequestForView.date
+                        ? new Date(
+                            selectedRequestForView.date
+                          ).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                {selectedRequestForView.notes && (
+                  <div className="mt-4 bg-white rounded-lg p-4">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">
+                      Notes:
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {selectedRequestForView.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Uploaded Documents */}
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 mb-4">
+                  Uploaded Documents (
+                  {selectedRequestForView.documents?.length || 0})
+                </h3>
+
+                {selectedRequestForView.documents &&
+                selectedRequestForView.documents.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {selectedRequestForView.documents.map((doc, idx) => {
+                      const docUrl = typeof doc === "string" ? doc : doc.url;
+                      const docName =
+                        typeof doc === "string"
+                          ? `Document ${idx + 1}`
+                          : doc.name || `Document ${idx + 1}`;
+                      const docType =
+                        typeof doc === "string"
+                          ? docUrl.toLowerCase().includes(".pdf")
+                            ? "application/pdf"
+                            : "image"
+                          : doc.type || "unknown";
+
+                      const isImage =
+                        docType.includes("image") ||
+                        docUrl.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
+                      const isPDF =
+                        docType.includes("pdf") || docUrl.match(/\.pdf(\?|$)/i);
+                      const isDoc =
+                        docType.includes("word") ||
+                        docType.includes("document") ||
+                        docUrl.match(/\.(doc|docx)(\?|$)/i);
+
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-gray-50 rounded-xl overflow-hidden border-2 border-gray-200 hover:border-yellow-400 transition-all"
+                        >
+                          <div className="aspect-video bg-gray-100 flex items-center justify-center relative overflow-hidden">
+                            {isImage ? (
+                              <img
+                                src={docUrl}
+                                alt={docName}
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  e.target.style.display = "none";
+                                  e.target.nextElementSibling.style.display =
+                                    "flex";
+                                }}
+                              />
+                            ) : isPDF ? (
+                              <div className="text-center">
+                                <FileText className="w-16 h-16 text-red-500 mx-auto mb-2" />
+                                <p className="text-sm text-gray-600">
+                                  PDF Document
+                                </p>
+                              </div>
+                            ) : isDoc ? (
+                              <div className="text-center">
+                                <FileText className="w-16 h-16 text-blue-500 mx-auto mb-2" />
+                                <p className="text-sm text-gray-600">
+                                  Word Document
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="text-center">
+                                <FileText className="w-16 h-16 text-gray-400 mx-auto mb-2" />
+                                <p className="text-sm text-gray-600">
+                                  Document File
+                                </p>
+                              </div>
+                            )}
+                            <div
+                              className="absolute inset-0 bg-gradient-to-br from-gray-400 to-gray-600 items-center justify-center hidden"
+                              style={{ display: "none" }}
+                            >
+                              <FileText className="w-16 h-16 text-white" />
+                            </div>
+                          </div>
+
+                          <div className="p-4">
+                            <p className="text-sm font-semibold text-gray-900 mb-2 truncate">
+                              {docName}
+                            </p>
+                            {typeof doc !== "string" && doc.uploadedAt && (
+                              <p className="text-xs text-gray-500 mb-3">
+                                Uploaded:{" "}
+                                {new Date(doc.uploadedAt).toLocaleDateString()}
+                              </p>
+                            )}
+                            <div className="flex gap-2">
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-semibold transition-colors"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                                View
+                              </a>
+                              <a
+                                href={docUrl}
+                                download
+                                className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-semibold transition-colors"
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-xl p-8 text-center">
+                    <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No documents uploaded</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-between items-center pt-4 border-t">
+                <button
+                  onClick={() => {
+                    setShowDocumentModal(false);
+                    setSelectedRequestForView(null);
+                  }}
+                  className="px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition-colors"
+                >
+                  Close
+                </button>
+
+                {selectedRequestForView.status === "Pending" && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        updateAvailmentStatus(
+                          selectedRequestForView.firebaseKey,
+                          "Approved"
+                        );
+                        setShowDocumentModal(false);
+                        setSelectedRequestForView(null);
+                      }}
+                      className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => {
+                        const reason = prompt(
+                          "Enter rejection reason (optional):"
+                        );
+                        updateAvailmentStatus(
+                          selectedRequestForView.firebaseKey,
+                          "Rejected"
+                        );
+                        if (reason) {
+                          const availmentRef = dbRef(
+                            db,
+                            `availments/${selectedRequestForView.firebaseKey}`
+                          );
+                          update(availmentRef, { notes: reason });
+                        }
+                        setShowDocumentModal(false);
+                        setSelectedRequestForView(null);
+                      }}
+                      className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

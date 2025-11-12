@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { X, Save, RefreshCw } from "lucide-react";
+import { X, Save, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { ref as dbRef, get, update } from "firebase/database";
 import { db } from "../services/firebase";
+
+const DEFAULT_PUROKS = [
+  "Purok Catleya",
+  "Purok Jasmin",
+  "Purok Rosal",
+  "Purok Velasco Ave / Urbano",
+];
 
 const IDSettings = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
@@ -12,7 +19,9 @@ const IDSettings = ({ isOpen, onClose }) => {
     presidentDesignation: "President",
     contactNumber: "0948-789-4396",
     barangayName: "Barangay Pinagbuhatan",
+    puroks: DEFAULT_PUROKS,
   });
+  const [newPurok, setNewPurok] = useState("");
 
   // Fetch current settings from Firebase
   useEffect(() => {
@@ -27,9 +36,13 @@ const IDSettings = ({ isOpen, onClose }) => {
       const settingsRef = dbRef(db, "settings/idSettings");
       const snapshot = await get(settingsRef);
       if (snapshot.exists()) {
+        const data = snapshot.val();
         setFormData((prev) => ({
           ...prev,
-          ...snapshot.val(),
+          ...data,
+          puroks: Array.isArray(data.puroks)
+            ? data.puroks.filter((p) => typeof p === "string" && p.trim())
+            : prev.puroks,
         }));
       }
     } catch (error) {
@@ -50,8 +63,15 @@ const IDSettings = ({ isOpen, onClose }) => {
   const handleSave = async () => {
     setSaving(true);
     try {
+      const sanitizedPuroks = (formData.puroks || [])
+        .map((purok) => (purok || "").toString().trim())
+        .filter((purok, idx, arr) => purok && arr.indexOf(purok) === idx);
+
       const settingsRef = dbRef(db, "settings/idSettings");
-      await update(settingsRef, formData);
+      await update(settingsRef, {
+        ...formData,
+        puroks: sanitizedPuroks.length > 0 ? sanitizedPuroks : DEFAULT_PUROKS,
+      });
       alert("ID Settings saved successfully!");
       onClose();
     } catch (error) {
@@ -66,6 +86,40 @@ const IDSettings = ({ isOpen, onClose }) => {
     fetchIDSettings();
   };
 
+  const handleAddPurok = () => {
+    const trimmed = newPurok.trim();
+    if (!trimmed) return;
+    setFormData((prev) => {
+      const existing = prev.puroks || [];
+      if (existing.some((p) => p.toLowerCase() === trimmed.toLowerCase())) {
+        return prev;
+      }
+      return {
+        ...prev,
+        puroks: [...existing, trimmed],
+      };
+    });
+    setNewPurok("");
+  };
+
+  const handleUpdatePurok = (index, value) => {
+    setFormData((prev) => {
+      const updated = [...(prev.puroks || [])];
+      updated[index] = value;
+      return {
+        ...prev,
+        puroks: updated,
+      };
+    });
+  };
+
+  const handleRemovePurok = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      puroks: (prev.puroks || []).filter((_, idx) => idx !== index),
+    }));
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -73,7 +127,7 @@ const IDSettings = ({ isOpen, onClose }) => {
       <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full m-4">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-900">ID Card Settings</h2>
+          <h2 className="text-2xl font-bold text-gray-900">System Settings</h2>
           <button
             onClick={onClose}
             className="p-1 hover:bg-gray-100 rounded-lg transition"
@@ -176,6 +230,65 @@ const IDSettings = ({ isOpen, onClose }) => {
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Purok Management */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Purok Management
+                </h3>
+                <p className="text-sm text-gray-600 mb-3">
+                  Customize the list of puroks that appear across the admin
+                  tools. These values power member forms, filters, and reports.
+                </p>
+                <div className="space-y-3">
+                  {(formData.puroks || []).length === 0 && (
+                    <div className="text-sm text-gray-500 bg-gray-100 border border-gray-200 rounded-lg px-3 py-2">
+                      No puroks defined yet. Add at least one to get started.
+                    </div>
+                  )}
+                  {(formData.puroks || []).map((purok, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2"
+                    >
+                      <input
+                        type="text"
+                        value={purok}
+                        onChange={(e) =>
+                          handleUpdatePurok(index, e.target.value)
+                        }
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none text-sm"
+                        placeholder={`Purok ${index + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePurok(index)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="Remove purok"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="text"
+                      value={newPurok}
+                      onChange={(e) => setNewPurok(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none text-sm"
+                      placeholder="Add new purok"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddPurok}
+                      className="px-3 py-2 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
+                    >
+                      <Plus size={16} />
+                      Add
+                    </button>
                   </div>
                 </div>
               </div>

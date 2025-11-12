@@ -14,6 +14,8 @@ import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { createAuditLogger } from "../utils/AuditLogger";
 
+const DEFAULT_PUROKS = ["Purok 1", "Purok 2", "Purok 3", "Purok 4", "Purok 5"];
+
 const ReportGeneration = ({ selectedTemplate, currentUser }) => {
   const [reportType, setReportType] = useState(
     selectedTemplate?.reportType || ""
@@ -22,10 +24,10 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
   const [dateTo, setDateTo] = useState("");
   const [surnameStart, setSurnameStart] = useState("A");
   const [surnameEnd, setSurnameEnd] = useState("Z");
-  const [selectedBarangay, setSelectedBarangay] = useState("");
+  const [selectedPurok, setSelectedPurok] = useState("");
   const [selectedAgeGroup, setSelectedAgeGroup] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
-  const [barangays, setBarangays] = useState([]);
+  const [puroks, setPuroks] = useState(DEFAULT_PUROKS);
   const [members, setMembers] = useState([]);
   const [payments, setPayments] = useState([]);
   const [availments, setAvailments] = useState([]);
@@ -54,7 +56,6 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
     () => ({
       membership: "Membership",
       financial: "Financial",
-      benefits: "Services",
       demographic: "Demographic",
     }),
     []
@@ -64,7 +65,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
     dateFrom: dateFrom || null,
     dateTo: dateTo || null,
     surnameRange: `${surnameStart || "A"}-${surnameEnd || "Z"}`,
-    barangay: selectedBarangay || "All",
+    purok: selectedPurok || "All",
     ageGroup: selectedAgeGroup || "All",
     status: selectedStatus || "All",
     includeSections,
@@ -81,10 +82,23 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
           ...data[key],
         }));
         setMembers(membersList);
-        const uniqueBarangays = [
-          ...new Set(membersList.map((m) => m.barangay)),
-        ].sort();
-        setBarangays(uniqueBarangays);
+      }
+    });
+  }, []);
+
+  // Fetch purok settings
+  useEffect(() => {
+    const settingsRef = dbRef(db, "settings/idSettings/puroks");
+    onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const purokArray = snapshot.val();
+        if (Array.isArray(purokArray)) {
+          setPuroks(purokArray);
+        } else {
+          setPuroks(DEFAULT_PUROKS);
+        }
+      } else {
+        setPuroks(DEFAULT_PUROKS);
       }
     });
   }, []);
@@ -125,7 +139,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
       setDateTo(selectedTemplate.dateTo || "");
       setSurnameStart(selectedTemplate.surnameStart || "A");
       setSurnameEnd(selectedTemplate.surnameEnd || "Z");
-      setSelectedBarangay(selectedTemplate.selectedBarangay || "");
+      setSelectedPurok(selectedTemplate.selectedPurok || "");
       setSelectedAgeGroup(selectedTemplate.selectedAgeGroup || "");
       setSelectedStatus(selectedTemplate.selectedStatus || "");
       // Show confirmation message
@@ -142,10 +156,10 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
     let filteredPayments = payments;
     let filteredAvailments = availments;
 
-    // Filter members by barangay and age group
-    if (selectedBarangay) {
+    // Filter members by purok and age group
+    if (selectedPurok) {
       filteredMembers = filteredMembers.filter(
-        (m) => m.barangay === selectedBarangay
+        (m) => m.purok === selectedPurok
       );
     }
 
@@ -238,7 +252,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
         name: `${resolvedType} Report - ${new Date().toLocaleDateString()}`,
         type: resolvedType,
         dateRange: dateFrom && dateTo ? `${dateFrom} to ${dateTo}` : "All Time",
-        barangay: selectedBarangay || "All",
+        purok: selectedPurok || "All",
         ageGroup: selectedAgeGroup || "All",
         status: selectedStatus || "All",
         generatedBy: actorLabel,
@@ -283,7 +297,7 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
         name: reportName,
         type: reportType,
         dateRange: `${dateFrom} to ${dateTo}`,
-        barangay: selectedBarangay || "All",
+        purok: selectedPurok || "All",
         ageGroup: selectedAgeGroup || "All",
         status: selectedStatus || "All",
         generatedBy: actorLabel,
@@ -764,8 +778,8 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
         csvContent += `Period: ${dateFrom} to ${dateTo}\n`;
       }
       csvContent += `Report Type: ${reportType || "General"}\n`;
-      csvContent += `Filter: Surname Range (${surnameStart}-${surnameEnd}), Barangay (${
-        selectedBarangay || "All"
+      csvContent += `Filter: Surname Range (${surnameStart}-${surnameEnd}), Purok (${
+        selectedPurok || "All"
       }), Age Group (${selectedAgeGroup || "All"}), Status (${
         selectedStatus || "All"
       })\n\n`;
@@ -1001,7 +1015,6 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
               <option value="">-- Select report type</option>
               <option value="membership">Membership Report</option>
               <option value="financial">Financial Report</option>
-              <option value="benefits">Services Utilization Report</option>
               <option value="demographic">Demographic Analysis</option>
             </select>
           </div>
@@ -1118,17 +1131,17 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
 
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-700">
-              Filter by Barangay
+              Filter by Purok
             </label>
             <select
-              value={selectedBarangay}
-              onChange={(e) => setSelectedBarangay(e.target.value)}
+              value={selectedPurok}
+              onChange={(e) => setSelectedPurok(e.target.value)}
               className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 bg-white"
             >
-              <option value="">-- All Barangays</option>
-              {barangays.map((b) => (
-                <option key={b} value={b}>
-                  {b}
+              <option value="">-- All Puroks</option>
+              {puroks.map((p) => (
+                <option key={p} value={p}>
+                  {p}
                 </option>
               ))}
             </select>
@@ -1296,13 +1309,6 @@ const ReportGeneration = ({ selectedTemplate, currentUser }) => {
           >
             <FileText className="w-5 h-5" />
             Generate Report
-          </button>
-          <button
-            onClick={generatePDF}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-semibold"
-          >
-            <Download className="w-5 h-5" />
-            Export PDF
           </button>
           <button
             onClick={generateExcel}

@@ -650,7 +650,11 @@ const DocumentManagement = () => {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
-              <DocumentCategoryManager currentUser={currentUser} />
+              <DocumentCategoryManager
+                categories={categories}
+                loading={categoriesLoading}
+                currentUser={currentUser}
+              />
             </div>
           </div>
         </div>

@@ -10,7 +10,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { ref as dbRef, push, set } from "firebase/database";
+import { ref as dbRef, push, set, onValue } from "firebase/database";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import {
   getStorage,
@@ -23,7 +23,7 @@ import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
 const AVAILABLE_BARANGAYS = ["Nagpayong", "Pinagbuhatan"];
-const PINAGBUHATAN_PUROKS = [
+const DEFAULT_PUROKS = [
   "Purok Catleya",
   "Purok Jasmin",
   "Purok Rosal",
@@ -156,6 +156,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
   const [purok, setPurok] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [purokOptions, setPurokOptions] = useState(DEFAULT_PUROKS);
 
   const inputControlClass =
     "w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500";
@@ -665,6 +666,25 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
     setSuccess(false);
   };
 
+  // Fetch dynamic puroks from Firebase
+  useEffect(() => {
+    const settingsRef = dbRef(db, "settings/idSettings/puroks");
+    const unsubscribe = onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const list = Array.isArray(data) ? data : Object.values(data || {});
+        const sanitized = list
+          .map((entry) => (entry || "").toString().trim())
+          .filter((entry, idx, arr) => entry && arr.indexOf(entry) === idx);
+        setPurokOptions(sanitized.length > 0 ? sanitized : DEFAULT_PUROKS);
+      } else {
+        setPurokOptions(DEFAULT_PUROKS);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     refreshCredentials();
   }, [refreshCredentials]);
@@ -1032,7 +1052,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     >
                       <option value="">Select Purok</option>
-                      {PINAGBUHATAN_PUROKS.map((purokName) => (
+                      {purokOptions.map((purokName) => (
                         <option key={purokName} value={purokName}>
                           {purokName}
                         </option>

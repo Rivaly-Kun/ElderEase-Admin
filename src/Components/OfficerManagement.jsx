@@ -481,25 +481,29 @@ const OfficerManagement = ({ currentUser }) => {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto border border-gray-300 rounded-lg">
-        <table className="w-full">
+      <div className="w-full border border-gray-300 rounded-lg overflow-hidden">
+        <table className="w-full table-auto">
           <thead className="bg-gradient-to-r from-purple-600 to-purple-700">
             <tr>
-              <th className="px-6 py-4 text-left text-white font-bold">Name</th>
-              <th className="px-6 py-4 text-left text-white font-bold">
+              <th className="px-4 py-4 text-left text-white font-bold min-w-[120px]">
+                Name
+              </th>
+              <th className="px-4 py-4 text-left text-white font-bold min-w-[180px]">
                 Email
               </th>
-              <th className="px-6 py-4 text-left text-white font-bold">Role</th>
-              <th className="px-6 py-4 text-left text-white font-bold">
+              <th className="px-4 py-4 text-left text-white font-bold min-w-[100px]">
+                Role
+              </th>
+              <th className="px-4 py-4 text-left text-white font-bold min-w-[130px]">
                 Department
               </th>
-              <th className="px-6 py-4 text-left text-white font-bold">
+              <th className="px-4 py-4 text-left text-white font-bold min-w-[90px]">
                 Status
               </th>
-              <th className="px-6 py-4 text-left text-white font-bold">
+              <th className="px-4 py-4 text-left text-white font-bold min-w-[140px]">
                 Created
               </th>
-              <th className="px-6 py-4 text-center text-white font-bold">
+              <th className="px-4 py-4 text-center text-white font-bold min-w-[120px]">
                 Actions
               </th>
             </tr>
@@ -522,27 +526,27 @@ const OfficerManagement = ({ currentUser }) => {
                   className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
                 >
                   {/* Name with Avatar */}
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4 min-w-[120px]">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm">
                         {officer.displayName.charAt(0).toUpperCase()}
                       </div>
-                      <span className="font-semibold text-gray-900">
+                      <span className="font-semibold text-gray-900 text-sm truncate">
                         {officer.displayName}
                       </span>
                     </div>
                   </td>
 
                   {/* Email */}
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <Mail size={16} className="text-gray-400" />
-                      {officer.email}
+                  <td className="px-4 py-4 min-w-[180px]">
+                    <div className="flex items-center gap-2 text-gray-600 text-sm">
+                      <Mail size={14} className="text-gray-400 flex-shrink-0" />
+                      <span className="truncate">{officer.email}</span>
                     </div>
                   </td>
 
                   {/* Role Selector with Switch */}
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4 min-w-[100px]">
                     <select
                       value={officer.role}
                       onChange={(e) =>
@@ -552,7 +556,7 @@ const OfficerManagement = ({ currentUser }) => {
                           e.target.value
                         )
                       }
-                      className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-900"
+                      className="px-2 py-1 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-900 text-sm w-full"
                     >
                       {roles.length > 0 ? (
                         roles.map((role) => (
@@ -574,12 +578,12 @@ const OfficerManagement = ({ currentUser }) => {
                   </td>
 
                   {/* Department */}
-                  <td className="px-6 py-4 text-gray-600">
+                  <td className="px-4 py-4 text-gray-600 text-sm min-w-[130px] truncate">
                     {officer.department || "-"}
                   </td>
 
                   {/* Status Toggle Switch */}
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4 min-w-[90px]">
                     <div className="flex items-center">
                       <label className="relative inline-block h-6 w-11">
                         <input
@@ -626,9 +630,9 @@ const OfficerManagement = ({ currentUser }) => {
                   </td>
 
                   {/* Created Date */}
-                  <td className="px-6 py-4 text-sm text-gray-600">
+                  <td className="px-4 py-4 text-xs text-gray-600 min-w-[140px]">
                     <div>
-                      <p>
+                      <p className="text-sm font-medium">
                         {officer.createdAt
                           ? new Date(officer.createdAt).toLocaleDateString()
                           : "N/A"}
@@ -642,14 +646,14 @@ const OfficerManagement = ({ currentUser }) => {
                   </td>
 
                   {/* Actions */}
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-center gap-2">
+                  <td className="px-4 py-4 min-w-[120px]">
+                    <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={() => openEditModal(officer)}
                         className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg transition"
                         title="Edit"
                       >
-                        <Edit2 size={18} />
+                        <Edit2 size={16} />
                       </button>
                       <button
                         onClick={() =>
@@ -658,7 +662,7 @@ const OfficerManagement = ({ currentUser }) => {
                         className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition"
                         title="Delete"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </td>

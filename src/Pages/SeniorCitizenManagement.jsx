@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Plus,
@@ -29,6 +29,13 @@ import { useMemberSearch } from "../Context/MemberSearchContext";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
+// Time constants for membership lifecycle
+const ONE_MONTH_MS = 1000 * 60 * 60 * 24 * 30;
+const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
+
+// Default puroks if no custom puroks are defined in settings
+const DEFAULT_PUROKS = ["Purok 1", "Purok 2", "Purok 3", "Purok 4", "Purok 5"];
+
 const SeniorCitizenManagement = () => {
   const location = useLocation();
   const [activeMenu, setActiveMenu] = useState("Senior Citizens");
@@ -50,6 +57,7 @@ const SeniorCitizenManagement = () => {
   const [showRequestsCenter, setShowRequestsCenter] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
+
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("");
@@ -58,6 +66,9 @@ const SeniorCitizenManagement = () => {
   const [selectedStatus, setSelectedStatus] = useState("");
   const [selectedPurok, setSelectedPurok] = useState("");
   const [surnameSortOrder, setSurnameSortOrder] = useState(""); // "asc" or "desc"
+
+  // Dynamic purok settings
+  const [purokOptions, setPurokOptions] = useState(DEFAULT_PUROKS);
 
   const { currentUser, loading: currentUserLoading } = useResolvedCurrentUser();
   const actorId = currentUser?.uid || currentUser?.id || "unknown";
@@ -291,6 +302,178 @@ const SeniorCitizenManagement = () => {
     return () => unsubscribe();
   }, []);
 
+  // Fetch dynamic purok settings
+  useEffect(() => {
+    const puroksRef = dbRef(db, "settings/idSettings/puroks");
+
+    const unsubscribe = onValue(
+      puroksRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data && Array.isArray(data) && data.length > 0) {
+          setPurokOptions(data);
+        } else {
+          setPurokOptions(DEFAULT_PUROKS);
+        }
+      },
+      (error) => {
+        console.error("Error fetching purok settings:", error);
+        setPurokOptions(DEFAULT_PUROKS);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // Payment summary by OSCA ID for membership status tracking
+  const paymentSummaryByOscaId = useMemo(() => {
+    if (!paymentsData || paymentsData.length === 0) {
+      return {};
+    }
+
+    const summary = {};
+
+    paymentsData.forEach((payment) => {
+      const oscaID =
+        payment?.oscaID || payment?.memberOscaID || payment?.memberId;
+      if (!oscaID) return;
+
+      const status = (payment?.payment_status || payment?.status || "paid")
+        .toString()
+        .toLowerCase();
+      if (["void", "cancelled", "failed"].includes(status)) return;
+
+      const rawDate =
+        payment?.payDate ||
+        payment?.date_created ||
+        payment?.createdAt ||
+        payment?.timestamp;
+
+      if (!rawDate) return;
+
+      const parsedDate = new Date(rawDate);
+      if (Number.isNaN(parsedDate.getTime())) return;
+
+      const existing = summary[oscaID]?.lastPaidAt?.getTime() || 0;
+      if (!summary[oscaID] || parsedDate.getTime() > existing) {
+        summary[oscaID] = {
+          lastPaidAt: parsedDate,
+        };
+      }
+    });
+
+    return summary;
+  }, [paymentsData]);
+
+  // ✅ Auto-manage membership lifecycle based on latest payment activity
+  useEffect(() => {
+    if (!members.length) return;
+
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    members.forEach((member) => {
+      if (!member?.firebaseKey) return;
+
+      // Respect manual overrides for deceased members
+      if (member.deceased) return;
+
+      const paymentRecord = paymentSummaryByOscaId[member.oscaID];
+      const lastPaymentDate = paymentRecord?.lastPaidAt || null;
+
+      // IMPORTANT: Only proceed if there's an actual payment record
+      // Members with no payments should stay archived (no false unarchiving)
+      if (!lastPaymentDate) {
+        return;
+      }
+
+      const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+      const lastPaymentMs = lastPaymentDate.getTime();
+      const timeSincePayment = nowMs - lastPaymentMs;
+
+      // Case 1: Recent payment within 1 month → Unarchive
+      if (timeSincePayment <= ONE_MONTH_MS) {
+        if (member.archived) {
+          update(memberRef, {
+            archived: false,
+            date_updated: now.toISOString(),
+          });
+          console.log(
+            `✅ Auto-unarchived ${member.firstName || ""} ${
+              member.lastName || ""
+            } — recent payment detected`
+          );
+        }
+        return;
+      }
+
+      // Case 2: Unpaid for 1-12 months → Archive
+      if (timeSincePayment > ONE_MONTH_MS && timeSincePayment < ONE_YEAR_MS) {
+        if (!member.archived) {
+          update(memberRef, {
+            archived: true,
+            date_updated: now.toISOString(),
+          });
+          console.log(
+            `📦 Auto-archived ${member.firstName || ""} ${
+              member.lastName || ""
+            } — unpaid for over a month`
+          );
+        }
+        return;
+      }
+
+      // Case 3: Unpaid for 12+ months → Mark as deceased
+      if (timeSincePayment >= ONE_YEAR_MS) {
+        update(memberRef, {
+          archived: true,
+          deceased: true,
+          date_updated: now.toISOString(),
+        });
+        console.log(
+          `☠️ Auto-marked ${member.firstName || ""} ${
+            member.lastName || ""
+          } as deceased — unpaid for 12+ months`
+        );
+        return;
+      }
+    });
+  }, [members, paymentSummaryByOscaId]);
+
+  const getMemberPaymentStatus = useCallback(
+    (member) => {
+      if (!member) {
+        return {
+          label: "Unpaid",
+          variant: "bg-amber-100 text-amber-700",
+          lastPaidAt: null,
+        };
+      }
+
+      const record = paymentSummaryByOscaId[member.oscaID];
+      if (!record?.lastPaidAt) {
+        return {
+          label: "Unpaid",
+          variant: "bg-amber-100 text-amber-700",
+          lastPaidAt: null,
+        };
+      }
+
+      const diff = Date.now() - record.lastPaidAt.getTime();
+      const withinYear = diff <= ONE_YEAR_MS;
+
+      return {
+        label: withinYear ? "Paid" : "Unpaid",
+        variant: withinYear
+          ? "bg-emerald-100 text-emerald-700"
+          : "bg-amber-100 text-amber-700",
+        lastPaidAt: record.lastPaidAt,
+        diffMs: diff,
+      };
+    },
+    [paymentSummaryByOscaId]
+  );
+
   // Helpers
   const extractBarangay = (address) => {
     if (!address) return "N/A";
@@ -466,6 +649,32 @@ const SeniorCitizenManagement = () => {
   };
 
   // Filter logic
+  const barangayOptions = useMemo(() => {
+    const unique = new Set();
+    members.forEach((member) => {
+      const derived = extractBarangay(member.address);
+      if (derived && derived !== "N/A") {
+        unique.add(derived);
+      }
+    });
+    return Array.from(unique).sort();
+  }, [members]);
+
+  const availablePuroks = useMemo(() => {
+    if (purokOptions && purokOptions.length > 0) {
+      return [...purokOptions];
+    }
+
+    const dynamic = new Set();
+    members.forEach((member) => {
+      const derived = extractPurok(member);
+      if (derived && derived !== "N/A") {
+        dynamic.add(derived);
+      }
+    });
+    return Array.from(dynamic).sort();
+  }, [members, purokOptions]);
+
   const filteredMembers = members
     .filter((member) => {
       const matchesTab =
@@ -733,10 +942,11 @@ const SeniorCitizenManagement = () => {
               </button>
               <button
                 onClick={() => setShowIDSettings(true)}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
+                className="p-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center justify-center"
+                aria-label="Open system settings"
               >
                 <Settings className="w-4 h-4" />
-                ID Settings
+                <span className="sr-only">Settings</span>
               </button>
             </div>
           </div>
@@ -841,13 +1051,11 @@ const SeniorCitizenManagement = () => {
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400"
             >
               <option value="">All Puroks</option>
-              {[...new Set(members.map((m) => extractPurok(m)))]
-                .filter((p) => p !== "N/A")
-                .map((purok, i) => (
-                  <option key={i} value={purok}>
-                    {purok}
-                  </option>
-                ))}
+              {availablePuroks.map((purok) => (
+                <option key={purok} value={purok}>
+                  {purok}
+                </option>
+              ))}
             </select>
 
             {/* Surname Sorting */}
@@ -909,6 +1117,9 @@ const SeniorCitizenManagement = () => {
                           Contact
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
+                          Membership
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
                           Status
                         </th>
                         <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase">
@@ -965,6 +1176,26 @@ const SeniorCitizenManagement = () => {
                             <div className="text-xs text-gray-500">
                               {extractBarangay(member.address)}
                             </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            {(() => {
+                              const membershipInfo =
+                                getMemberPaymentStatus(member);
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${membershipInfo.variant}`}
+                                  >
+                                    {membershipInfo.label}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {membershipInfo.lastPaidAt
+                                      ? `Last paid ${membershipInfo.lastPaidAt.toLocaleDateString()}`
+                                      : "No payment record"}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-4">
                             <span

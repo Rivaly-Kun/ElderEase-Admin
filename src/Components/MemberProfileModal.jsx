@@ -5,7 +5,15 @@ import React, {
   useRef,
   useCallback,
 } from "react";
-import { X, Users, Camera, Printer, Plus, Trash2 } from "lucide-react";
+import {
+  X,
+  Users,
+  Camera,
+  Printer,
+  Plus,
+  Trash2,
+  RefreshCw,
+} from "lucide-react";
 import QRCode from "react-qr-code";
 import {
   ref as dbRef,
@@ -15,19 +23,86 @@ import {
   child,
   onValue,
 } from "firebase/database";
-import { db } from "../services/firebase";
+import { initializeApp, getApps } from "firebase/app";
+import { db, firebaseConfig } from "../services/firebase";
 import {
   getAuth,
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  updateEmail,
+  signInWithEmailAndPassword,
+  signOut,
 } from "firebase/auth";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 import MemberDocumentManager from "./MemberDocumentManager";
 import { useNavigate } from "react-router-dom";
 const auth = getAuth();
+
+const DEFAULT_PUROKS = [
+  "Purok Catleya",
+  "Purok Jasmin",
+  "Purok Rosal",
+  "Purok Velasco Ave / Urbano",
+];
+
+const getCryptoRandomValues = (array) => {
+  if (typeof window !== "undefined" && window.crypto?.getRandomValues) {
+    return window.crypto.getRandomValues(array);
+  }
+  for (let i = 0; i < array.length; i += 1) {
+    array[i] = Math.floor(Math.random() * 256);
+  }
+  return array;
+};
+
+const createSecureRandomString = (
+  length = 8,
+  charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+) => {
+  const result = [];
+  const randomValues = new Uint32Array(length);
+  getCryptoRandomValues(randomValues);
+  for (let i = 0; i < length; i += 1) {
+    result.push(charset[randomValues[i] % charset.length]);
+  }
+  return result.join("");
+};
+
+const shuffleCharacters = (input = "") => {
+  const chars = input.split("");
+  if (chars.length <= 1) return input;
+  const randomArray = new Uint32Array(chars.length);
+  getCryptoRandomValues(randomArray);
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomArray[i] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+};
+
+const generateSecurePassword = (length = 14) => {
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const uppercase = lowercase.toUpperCase();
+  const digits = "0123456789";
+  const symbols = "!@#$%^&*";
+  const allChars = `${lowercase}${uppercase}${digits}${symbols}`;
+
+  const requiredChars = [
+    createSecureRandomString(1, lowercase),
+    createSecureRandomString(1, uppercase),
+    createSecureRandomString(1, digits),
+    createSecureRandomString(1, symbols),
+  ];
+
+  const remainingLength = Math.max(length - requiredChars.length, 0);
+  const randomTail = createSecureRandomString(remainingLength, allChars).split(
+    ""
+  );
+  const shuffled = shuffleCharacters(requiredChars.concat(randomTail).join(""));
+
+  return shuffled.slice(0, length);
+};
 
 const DEFAULT_MEMBER_FORM = {
   // Identification
@@ -57,6 +132,8 @@ const DEFAULT_MEMBER_FORM = {
   address: "",
   contactNum: "",
   purok: "",
+  email: "",
+  password: "",
 
   // Health & Status
   bloodType: "",
@@ -109,10 +186,71 @@ const MemberProfileModal = ({
 }) => {
   const navigate = useNavigate();
   const smartIdRef = useRef(null);
+  const secondaryAppRef = useRef(null);
+
+  const getSecondaryAuth = useCallback(() => {
+    if (!secondaryAppRef.current) {
+      const existingApp = getApps().find(
+        (appInstance) => appInstance.name === "member-password-worker"
+      );
+      secondaryAppRef.current =
+        existingApp || initializeApp(firebaseConfig, "member-password-worker");
+    }
+    return getAuth(secondaryAppRef.current);
+  }, []);
+
+  const updateMemberPasswordViaSecondary = useCallback(
+    async (emailAddress, currentPassword, newPassword) => {
+      if (!emailAddress) {
+        return {
+          success: false,
+          message: "Member email address is missing.",
+        };
+      }
+
+      const secondaryAuth = getSecondaryAuth();
+
+      try {
+        // Try to sign in with the stored password
+        let credential;
+        try {
+          credential = await signInWithEmailAndPassword(
+            secondaryAuth,
+            emailAddress,
+            currentPassword
+          );
+        } catch (signInError) {
+          console.warn(
+            "Could not authenticate with stored password:",
+            signInError.message
+          );
+          return {
+            success: false,
+            message:
+              "The member's authentication credentials are not synchronized with Firebase Auth.",
+          };
+        }
+
+        // If sign in successful, update the password
+        await updatePassword(credential.user, newPassword);
+        return { success: true };
+      } catch (error) {
+        console.error("Secondary auth password update failed:", error);
+        return {
+          success: false,
+          message: error.message || "Unknown error updating Firebase Auth",
+        };
+      } finally {
+        await signOut(secondaryAuth).catch(() => undefined);
+      }
+    },
+    [getSecondaryAuth]
+  );
 
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState(() => createDefaultMemberForm());
   const [saving, setSaving] = useState(false);
+  const [purokOptions, setPurokOptions] = useState(DEFAULT_PUROKS);
   const [idSettings, setIdSettings] = useState({
     organizationName: "Barangay Pinagbuhatan Senior Citizens",
     presidentName: "",
@@ -262,12 +400,7 @@ const MemberProfileModal = ({
       setFormData(createDefaultMemberForm());
     }
     setIsEditing(false);
-  }, [
-    selectedMember,
-    showProfileModal,
-    normalizeMemberData,
-    createDefaultMemberForm,
-  ]);
+  }, [selectedMember, showProfileModal, normalizeMemberData]);
 
   useEffect(() => {
     if (!showProfileModal || !selectedMember) return;
@@ -307,6 +440,25 @@ const MemberProfileModal = ({
       unsubscribeAvailments();
     };
   }, [showProfileModal, selectedMember]);
+
+  // Fetch dynamic puroks from Firebase
+  useEffect(() => {
+    const settingsRef = dbRef(db, "settings/idSettings/puroks");
+    const unsubscribe = onValue(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const list = Array.isArray(data) ? data : Object.values(data || {});
+        const sanitized = list
+          .map((entry) => (entry || "").toString().trim())
+          .filter((entry, idx, arr) => entry && arr.indexOf(entry) === idx);
+        setPurokOptions(sanitized.length > 0 ? sanitized : DEFAULT_PUROKS);
+      } else {
+        setPurokOptions(DEFAULT_PUROKS);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!showProfileModal || !selectedMember) return;
@@ -428,6 +580,11 @@ const MemberProfileModal = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleGeneratePasswordClick = () => {
+    const generated = generateSecurePassword(14);
+    setFormData((prev) => ({ ...prev, password: generated }));
+  };
+
   const handleFamilyMemberChange = (index, field, value) => {
     const updatedFamilyMembers = [...(formData.familyMembers || [])];
     if (!updatedFamilyMembers[index]) {
@@ -495,8 +652,8 @@ const MemberProfileModal = ({
 
       const memberRef = dbRef(db, `members/${key}`);
 
-      // Update Realtime Database first (excluding password and email)
-      const { password, email, ...dbData } = formData;
+      const { password: nextPassword, email: nextEmail, ...dbData } = formData;
+
       const updatedPayload = {
         ...dbData,
         medConditions: Array.isArray(dbData.medConditions)
@@ -507,27 +664,34 @@ const MemberProfileModal = ({
         updatedById: actorId,
         lastActionByRole: actorRole,
       };
+
+      if (nextEmail && nextEmail !== selectedMember.email) {
+        updatedPayload.email = nextEmail;
+      }
+
+      const passwordChanged =
+        nextPassword && nextPassword !== selectedMember.password;
+      if (passwordChanged) {
+        updatedPayload.password = nextPassword;
+      }
+
       await update(memberRef, updatedPayload);
 
-      // Update Firebase Auth password if it changed and user is current logged-in
-      if (
-        password &&
-        auth.currentUser &&
-        auth.currentUser.email === selectedMember.email
-      ) {
-        const oldPassword = prompt(
-          "Please enter your current password to update password:"
+      let passwordUpdateError = null;
+      if (passwordChanged) {
+        const passwordSyncResult = await updateMemberPasswordViaSecondary(
+          selectedMember.email,
+          selectedMember.password,
+          nextPassword
         );
-        if (!oldPassword) throw new Error("Password update cancelled");
 
-        const credential = EmailAuthProvider.credential(
-          auth.currentUser.email,
-          oldPassword
-        );
-        await reauthenticateWithCredential(auth.currentUser, credential);
-
-        await updatePassword(auth.currentUser, password);
-        alert("Password updated successfully!");
+        if (!passwordSyncResult?.success) {
+          const errorMessage =
+            passwordSyncResult?.message ||
+            "Unknown error synchronizing Firebase Auth.";
+          passwordUpdateError = new Error(errorMessage);
+          console.error("Error updating member password:", errorMessage);
+        }
       }
 
       const memberName = [
@@ -536,14 +700,60 @@ const MemberProfileModal = ({
       ]
         .join(" ")
         .trim();
+
+      // Sanitize data for audit logging - remove undefined values
+      const sanitizeForAudit = (obj) => {
+        if (obj === undefined || obj === null) return null;
+        if (typeof obj !== "object") return obj;
+
+        if (Array.isArray(obj)) {
+          return obj
+            .filter((item) => item !== undefined && item !== null)
+            .map((item) => sanitizeForAudit(item));
+        }
+
+        const sanitized = {};
+        Object.entries(obj).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            if (Array.isArray(value)) {
+              const sanitizedArray = value
+                .filter((item) => item !== undefined && item !== null)
+                .map((item) => sanitizeForAudit(item));
+              if (sanitizedArray.length > 0) {
+                sanitized[key] = sanitizedArray;
+              }
+            } else if (typeof value === "object") {
+              const sanitizedObj = sanitizeForAudit(value);
+              if (sanitizedObj && Object.keys(sanitizedObj).length > 0) {
+                sanitized[key] = sanitizedObj;
+              }
+            } else {
+              sanitized[key] = value;
+            }
+          }
+        });
+        return sanitized;
+      };
+
+      const cleanPreviousSnapshot = sanitizeForAudit(previousSnapshot);
+      const cleanUpdatedPayload = sanitizeForAudit(updatedPayload);
+
       await auditLogger.logMemberUpdated(
         key,
         memberName || previousSnapshot.oscaID || key,
-        previousSnapshot,
-        updatedPayload
+        cleanPreviousSnapshot,
+        cleanUpdatedPayload
       );
 
-      alert("Profile updated successfully!");
+      if (passwordUpdateError) {
+        alert(
+          `✅ Profile details saved!\n\n⚠️ Note: The password has been updated in the database, but Firebase authentication could not be synchronized.\n\nReason: ${passwordUpdateError.message}\n\nThe member can still log in using the new password once their account is properly set up.`
+        );
+      } else if (passwordChanged) {
+        alert("✅ Profile and password updated successfully!");
+      } else {
+        alert("✅ Profile updated successfully!");
+      }
       setIsEditing(false);
     } catch (error) {
       console.error("Error updating member:", error);
@@ -732,9 +942,29 @@ const MemberProfileModal = ({
                       <label className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-1 block">
                         Password
                       </label>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {selectedMember.password || "N/A"}
-                      </p>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            name="password"
+                            value={formData.password || ""}
+                            onChange={handleChange}
+                            className="w-full text-lg font-semibold text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleGeneratePasswordClick}
+                            className="p-2 text-purple-600 border border-purple-200 rounded-lg hover:bg-purple-50 transition"
+                            title="Generate secure password"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-lg font-semibold text-gray-900">
+                          {selectedMember.password || "N/A"}
+                        </p>
+                      )}
                     </div>
 
                     {/* OSCA ID - Read Only */}
@@ -1005,12 +1235,11 @@ const MemberProfileModal = ({
                           className="w-full text-lg font-semibold text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-purple-400 outline-none"
                         >
                           <option value="">Select Purok</option>
-                          <option value="Purok Catleya">Purok Catleya</option>
-                          <option value="Purok Jasmin">Purok Jasmin</option>
-                          <option value="Purok Rosal">Purok Rosal</option>
-                          <option value="Purok Velasco Ave / Urbano">
-                            Purok Velasco Ave / Urbano
-                          </option>
+                          {purokOptions.map((purokName) => (
+                            <option key={purokName} value={purokName}>
+                              {purokName}
+                            </option>
+                          ))}
                         </select>
                       ) : (
                         <p className="text-lg font-semibold text-gray-900">
