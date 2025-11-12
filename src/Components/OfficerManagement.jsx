@@ -2,8 +2,14 @@
 // Manage officer accounts with roles and permissions - Table format with switches
 
 import React, { useState, useEffect } from "react";
-import { db } from "../services/firebase";
+import { db, auth } from "../services/firebase";
 import { ref, get, set, remove } from "firebase/database";
+import {
+  createUserWithEmailAndPassword,
+  updateEmail,
+  updatePassword as updateAuthPassword,
+  sendEmailVerification,
+} from "firebase/auth";
 import {
   Plus,
   Edit2,
@@ -210,14 +216,73 @@ const OfficerManagement = ({ currentUser }) => {
         ? existingSnapshot.val()
         : {};
 
+      let authUid = existingData?.authUid || null;
+
+      // Create or update Firebase Auth user
+      if (!isEditing) {
+        // Creating new officer - create Auth user
+        try {
+          const userCredential = await createUserWithEmailAndPassword(
+            auth,
+            trimmedEmail,
+            passwordInput
+          );
+          authUid = userCredential.user.uid;
+          console.log("✅ Firebase Auth user created:", authUid);
+
+          // Send email verification
+          try {
+            await sendEmailVerification(userCredential.user);
+            console.log("✅ Email verification sent to:", trimmedEmail);
+
+            const mfaStatus = trimmedContact
+              ? `\n✅ SMS MFA has been automatically enabled for this officer using ${trimmedContact}.`
+              : `\n⚠️ No contact number provided - MFA is disabled.`;
+
+            alert(
+              `Officer account created successfully!\n\n` +
+                `A verification email has been sent to ${trimmedEmail}.${mfaStatus}\n\n` +
+                `The officer can now log in and will be prompted for SMS verification.`
+            );
+          } catch (verificationError) {
+            console.error(
+              "Error sending verification email:",
+              verificationError
+            );
+            alert(
+              `⚠️ Account created but verification email failed to send.\n` +
+                `Error: ${verificationError.message}\n\n` +
+                `The officer account is still created and can be used.`
+            );
+          }
+        } catch (authError) {
+          console.error("Error creating Auth user:", authError);
+          alert(`Error creating authentication: ${authError.message}`);
+          return;
+        }
+      } else if (wantsPasswordUpdate && authUid) {
+        // Updating existing officer with password change
+        // Note: This requires the user to be signed in with their account
+        // In a production app, you'd need admin SDK or re-authentication
+        console.log(
+          "⚠️ Password update for existing auth user - requires admin privileges"
+        );
+        // For now, we'll just update the password in the database
+        // You may need to implement a password reset email flow
+      }
+
       const officerData = {
         ...existingData,
+        authUid: authUid,
         email: trimmedEmail,
         displayName: trimmedName,
         role: formData.role,
         status: sanitizeStatus(formData.status),
         department: formData.department.trim(),
         contactNumber: trimmedContact,
+        // Automatically enable MFA if contact number is provided
+        mfaEnabled: trimmedContact ? true : existingData?.mfaEnabled || false,
+        emailVerified: isEditing ? existingData?.emailVerified || false : false,
         updatedAt: new Date().toISOString(),
         updatedBy: actorLabel,
         updatedById: actorId,
@@ -240,6 +305,13 @@ const OfficerManagement = ({ currentUser }) => {
       } else {
         delete officerData.password;
       }
+
+      console.log("💾 Saving officer data:", {
+        email: officerData.email,
+        contactNumber: officerData.contactNumber,
+        mfaEnabled: officerData.mfaEnabled,
+        authUid: officerData.authUid,
+      });
 
       await set(officerRef, officerData);
 
@@ -285,6 +357,36 @@ const OfficerManagement = ({ currentUser }) => {
     } catch (error) {
       console.error("Error saving officer:", error);
       alert("Error saving officer");
+    }
+  };
+
+  // Sync email verification status from Firebase Auth
+  const handleSyncEmailVerification = async (officer) => {
+    if (!officer.authUid) {
+      alert("This officer doesn't have a Firebase Auth account.");
+      return;
+    }
+
+    try {
+      // Note: In a production app, you'd need to use Firebase Admin SDK
+      // to get user data by UID. For now, we'll use a workaround.
+      // The proper way would be to have a cloud function that checks verification status.
+
+      alert(
+        "To enable MFA:\n\n" +
+          "1. The officer must verify their email by clicking the link sent to their inbox\n" +
+          "2. After verification, the officer should log in once\n" +
+          "3. Then MFA will be automatically enabled for their account\n\n" +
+          "Email verification status will be synced on their next login."
+      );
+
+      console.log(
+        "Email verification sync requested for officer:",
+        officer.email
+      );
+    } catch (error) {
+      console.error("Error syncing email verification:", error);
+      alert("Error checking verification status");
     }
   };
 

@@ -177,24 +177,34 @@ function App() {
       }
 
       console.log("[LOGIN] Authenticated user object:", authenticatedUser);
+      console.log("[LOGIN] MFA Enabled?", authenticatedUser.mfaEnabled);
+      console.log("[LOGIN] Contact Number:", authenticatedUser.contactNumber);
 
       // Check if user has MFA enabled
       if (authenticatedUser.mfaEnabled) {
-        console.log("[LOGIN] MFA enabled, showing verification screen");
-        // Store user temporarily and show MFA verification
-        setMFAPendingUser(authenticatedUser);
-
-        // Send SMS code
-        const mockCode = Math.random().toString().slice(2, 8);
         console.log(
-          `[LOGIN] SMS Code sent to ${authenticatedUser.contactNumber}: ${mockCode}`
+          "[LOGIN] ✅ MFA IS ENABLED - Showing Firebase SMS MFA verification screen"
         );
-        sessionStorage.setItem("mfaCode", mockCode);
 
+        if (!authenticatedUser.contactNumber) {
+          alert(
+            "❌ MFA is enabled but no contact number is set for this account."
+          );
+          return;
+        }
+
+        console.log(
+          `[LOGIN] Initiating Firebase SMS MFA for ${authenticatedUser.contactNumber}...`
+        );
+
+        // Store user temporarily and show MFA verification
+        // Firebase will handle SMS sending in the SMSMFAVerification component
+        setMFAPendingUser(authenticatedUser);
         setShowMFAVerification(true);
         return;
       }
 
+      console.log("[LOGIN] ⚠️ MFA NOT ENABLED - Bypassing MFA verification");
       console.log("[LOGIN] No MFA required, storing session user...");
       // No MFA, proceed with login
       storeSessionUser(authenticatedUser, remember);
