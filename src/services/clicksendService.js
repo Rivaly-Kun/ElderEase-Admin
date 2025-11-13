@@ -1,8 +1,8 @@
 // ClickSend SMS Service
 // Handles SMS sending through ClickSend API
 
-const CLICKSEND_API_KEY = "BFCB3E75-F596-2F48-8407-C8192CFF70E3";
-const CLICKSEND_USERNAME = "gabzcah@gmail.com";
+const CLICKSEND_API_KEY = "6EEBE979-DC74-FFF9-6AD7-93AB34F236C9";
+const CLICKSEND_USERNAME = "rianlipa28@gmail.com";
 const CLICKSEND_API_URL = "https://rest.clicksend.com/v3";
 
 // Create Basic Auth header
