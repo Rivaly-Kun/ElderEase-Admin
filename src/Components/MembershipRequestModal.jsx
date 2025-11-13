@@ -370,6 +370,14 @@ const MembershipRequestModal = ({
   };
 
   const handleAccept = async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to approve this membership request?"
+      )
+    ) {
+      return;
+    }
+
     setError("");
     setSuccess(false);
 
@@ -529,6 +537,10 @@ const MembershipRequestModal = ({
       return;
     }
 
+    const shouldNotify = window.confirm(
+      "Do you want to send a notification to the applicant about this rejection?"
+    );
+
     setLoading(true);
     try {
       const requestRef = dbRef(db, `createaccreq/${requestId}`);
@@ -542,8 +554,17 @@ const MembershipRequestModal = ({
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
+          notificationSent: shouldNotify,
         },
       });
+
+      if (shouldNotify) {
+        // Show notification confirmation
+        alert(
+          `Rejection notification will be sent to ${formData.firstName} ${formData.lastName}. ` +
+            `Please use the Notification Management to send the notification.`
+        );
+      }
 
       setSuccess(true);
       setTimeout(() => {

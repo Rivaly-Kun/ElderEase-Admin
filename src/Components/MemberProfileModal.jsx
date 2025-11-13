@@ -181,7 +181,23 @@ const MemberProfileModal = ({
   paymentsData = [],
   getImagePath = (p) => p,
   isDeceased = () => false,
-  extractBarangay = () => "-",
+  extractBarangay = (address) => {
+    if (!address) return "Pinagbuhatan";
+
+    // Check if address contains [Barangay format]
+    const bracketMatch = address.match(/\[Barangay\s+([^,\]]+)/i);
+    if (bracketMatch) {
+      return bracketMatch[1].trim();
+    }
+
+    // Old format: "Purok Jasmin, Pinagbuhatan, Pasig City, Metro Manila, Manila"
+    const parts = address.split(",").map((part) => part.trim());
+    if (parts.length >= 2) {
+      return parts[1] || "Pinagbuhatan";
+    }
+
+    return "Pinagbuhatan";
+  },
   handleEditClick,
 }) => {
   const navigate = useNavigate();
@@ -1216,9 +1232,15 @@ const MemberProfileModal = ({
                         Barangay
                       </label>
                       <p className="text-lg font-semibold text-gray-900">
-                        {extractBarangay(
-                          isEditing ? formData.address : selectedMember.address
-                        )}
+                        {(() => {
+                          const address = isEditing
+                            ? formData.address
+                            : selectedMember.address;
+                          if (!address) return "Pinagbuhatan";
+                          const parts = address.split(",").map((p) => p.trim());
+                          // Extract Pinagbuhatan from position [1] in "Purok X, Pinagbuhatan, City..."
+                          return parts[1] || "Pinagbuhatan";
+                        })()}
                       </p>
                     </div>
 
@@ -1227,25 +1249,17 @@ const MemberProfileModal = ({
                       <label className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-1 block">
                         Purok
                       </label>
-                      {isEditing ? (
-                        <select
-                          name="purok"
-                          value={formData.purok || ""}
-                          onChange={handleChange}
-                          className="w-full text-lg font-semibold text-gray-900 border rounded-lg px-2 py-1 focus:ring-2 focus:ring-purple-400 outline-none"
-                        >
-                          <option value="">Select Purok</option>
-                          {purokOptions.map((purokName) => (
-                            <option key={purokName} value={purokName}>
-                              {purokName}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <p className="text-lg font-semibold text-gray-900">
-                          {selectedMember.purok || "Not specified"}
-                        </p>
-                      )}
+                      <p className="text-lg font-semibold text-gray-900">
+                        {(() => {
+                          const address = isEditing
+                            ? formData.address
+                            : selectedMember.address;
+                          if (!address) return "Not specified";
+                          const parts = address.split(",").map((p) => p.trim());
+                          // Extract Purok from position [0] in "Purok X, Pinagbuhatan, City..."
+                          return parts[0] || "Not specified";
+                        })()}
+                      </p>
                     </div>
 
                     {/* Contact Number */}
@@ -2529,8 +2543,17 @@ const MemberProfileModal = ({
                                 </div>
                               )}
                             </div>
-                            <div className="w-16 sm:w-20 md:w-24 h-4 sm:h-5 md:h-6 border-b-2 border-gray-400 flex items-center justify-center overflow-hidden">
-                              <p className="text-[6px] sm:text-[7px] md:text-sm text-gray-400"></p>
+                            {/* Signature */}
+                            <div className="w-16 sm:w-20 md:w-24 h-8 sm:h-10 md:h-12 border-2 border-t-0 border-gray-400 flex items-center justify-center overflow-hidden bg-white">
+                              {selectedMember.signature ? (
+                                <img
+                                  src={selectedMember.signature}
+                                  alt="Signature"
+                                  className="w-full h-full object-contain p-0.5"
+                                />
+                              ) : (
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-400 italic">No signature</p>
+                              )}
                             </div>
                           </div>
 
@@ -2982,8 +3005,17 @@ const MemberProfileModal = ({
                               </div>
                             )}
                           </div>
-                          <div className="w-16 sm:w-20 md:w-24 h-4 sm:h-5 md:h-6 border-b-2 border-gray-400 flex items-center justify-center overflow-hidden">
-                            <p className="text-[6px] sm:text-[7px] md:text-sm text-gray-400"></p>
+                          {/* Signature */}
+                          <div className="w-16 sm:w-20 md:w-24 h-8 sm:h-10 md:h-12 border-2 border-t-0 border-gray-400 flex items-center justify-center overflow-hidden bg-white">
+                            {selectedMember.signature ? (
+                              <img
+                                src={selectedMember.signature}
+                                alt="Signature"
+                                className="w-full h-full object-contain p-0.5"
+                              />
+                            ) : (
+                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-400 italic">No signature</p>
+                            )}
                           </div>
                         </div>
 

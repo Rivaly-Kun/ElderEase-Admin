@@ -1648,9 +1648,12 @@ const NotificationDashboard = ({ currentUser }) => {
                     }
                     className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    <option value="">All Barangays</option>
-                    <option value="barangay1">Barangay 1</option>
-                    <option value="barangay2">Barangay 2</option>
+                    <option value="">All Purok</option>
+                    {purokSettings.map((purok) => (
+                      <option key={purok} value={purok}>
+                        {purok}
+                      </option>
+                    ))}
                   </select>
                   <select
                     value={smsSenderForm.paymentStatus}
@@ -1664,7 +1667,7 @@ const NotificationDashboard = ({ currentUser }) => {
                   >
                     <option value="">All Payment Status</option>
                     <option value="paid">Paid</option>
-                    <option value="pending">Pending</option>
+                    <option value="unpaid">Unpaid</option>
                   </select>
                   <select
                     value={smsSenderForm.ageGroup}
@@ -1677,8 +1680,12 @@ const NotificationDashboard = ({ currentUser }) => {
                     className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="">All Ages</option>
-                    <option value="60-65">60-65</option>
-                    <option value="65-75">65-75</option>
+                    <option value="60-64">60-64 years</option>
+                    <option value="65-69">65-69 years</option>
+                    <option value="70-74">70-74 years</option>
+                    <option value="75-79">75-79 years</option>
+                    <option value="80-84">80-84 years</option>
+                    <option value="85+">85+ years</option>
                   </select>
                 </div>
               </div>
@@ -1988,6 +1995,29 @@ const NotificationDashboard = ({ currentUser }) => {
                         <td className="py-4 px-4 text-center">
                           <button
                             onClick={() => {
+                              const filterDetails = [];
+                              if (msg.barangay) {
+                                filterDetails.push(
+                                  `Select Purok: ${msg.barangay}`
+                                );
+                              }
+                              if (msg.paymentStatus) {
+                                filterDetails.push(
+                                  `Select Payment Status: ${msg.paymentStatus}`
+                                );
+                              }
+                              if (msg.ageGroup) {
+                                filterDetails.push(
+                                  `Select Age: ${msg.ageGroup}`
+                                );
+                              }
+                              const filtersText =
+                                filterDetails.length > 0
+                                  ? `\n\nFilters Applied:\n${filterDetails.join(
+                                      "\n"
+                                    )}`
+                                  : "";
+
                               alert(
                                 `Message Details:\n\nSubject: ${
                                   msg.subject || "N/A"
@@ -1997,7 +2027,7 @@ const NotificationDashboard = ({ currentUser }) => {
                                   msg.sentBy
                                 }\nDate: ${new Date(
                                   msg.sentDate
-                                ).toLocaleDateString()}\n\nMessage:\n${
+                                ).toLocaleDateString()}${filtersText}\n\nMessage:\n${
                                   msg.message ||
                                   msg.content ||
                                   "No message content"

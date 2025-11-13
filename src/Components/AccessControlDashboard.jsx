@@ -200,32 +200,38 @@ const AccessControlDashboard = ({ currentUser, initialSelectedAuditLog }) => {
             {/* Overview Sections */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* System Status */}
-              <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">
+              <div className="bg-white rounded-lg shadow p-8 border border-gray-200">
+                <h3 className="text-2xl font-bold text-gray-800 mb-6">
                   System Status
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-600">SSL/HTTPS Encryption</span>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                    <span className="text-lg text-gray-600">
+                      SSL/HTTPS Encryption
+                    </span>
+                    <span className="px-4 py-2 bg-green-100 text-green-700 rounded-full text-base font-medium">
                       Enabled
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Audit Logging</span>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                    <span className="text-lg text-gray-600">Audit Logging</span>
+                    <span className="px-4 py-2 bg-green-100 text-green-700 rounded-full text-base font-medium">
                       Active
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Role-Based Access</span>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                    <span className="text-lg text-gray-600">
+                      Role-Based Access
+                    </span>
+                    <span className="px-4 py-2 bg-green-100 text-green-700 rounded-full text-base font-medium">
                       Active
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Module Permissions</span>
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                    <span className="text-lg text-gray-600">
+                      Module Permissions
+                    </span>
+                    <span className="px-4 py-2 bg-green-100 text-green-700 rounded-full text-base font-medium">
                       Enforced
                     </span>
                   </div>

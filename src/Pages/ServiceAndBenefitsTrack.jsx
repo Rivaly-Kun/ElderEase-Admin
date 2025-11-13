@@ -607,13 +607,28 @@ const ServiceAndBenefitsTrack = () => {
   };
 
   // Calculate statistics
-  const totalBenefitsThisYear = availments
-    .filter(
-      (a) =>
-        new Date(a.date).getFullYear() === new Date().getFullYear() &&
-        a.status === "Approved"
-    )
-    .reduce((sum, a) => sum + (parseFloat(a.cashValue) || 0), 0);
+  const totalBenefitsThisYear = useMemo(() => {
+    console.log("=== BENEFITS CALCULATION DEBUG ===");
+    console.log("Total availments:", availments.length);
+    console.log("All availments:", availments);
+    console.log("Current year:", new Date().getFullYear());
+
+    const filtered = availments.filter((a) => a.status === "Approved");
+
+    console.log("Filtered approved (all time):", filtered.length);
+    console.log("Filtered data:", filtered);
+
+    const total = filtered.reduce((sum, a) => {
+      const value = parseFloat(
+        a.cashValue?.toString().replace(/[₱,]/g, "") || 0
+      );
+      console.log(`Adding ${a.benefitName}: ${value} (raw: ${a.cashValue})`);
+      return sum + value;
+    }, 0);
+    console.log("Total benefits calculated:", total);
+
+    return total;
+  }, [availments]);
 
   const benefitCounts = {};
   availments.forEach((a) => {

@@ -249,16 +249,16 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
     setPassword(generatedPassword);
   }, [formData.lastName, formData.oscaID]);
 
-  const addressPreview = [
-    houseStreet,
-    purok, // Purok name already includes "Purok" prefix
-    barangay ? `Brgy. ${barangay}` : "",
-    city,
-    province,
-    region,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const addressPreview = (() => {
+    const parts = [];
+    if (houseStreet) parts.push(houseStreet);
+    if (purok) parts.push(purok); // Purok name already includes "Purok" prefix
+
+    const mainAddress = parts.join(", ");
+    const locationSuffix = `[Barangay ${barangay}, ${city}]`;
+
+    return mainAddress ? `${mainAddress} ${locationSuffix}` : "";
+  })();
 
   const canGenerateCredentials = Boolean(formData.lastName && formData.oscaID);
 
@@ -845,7 +845,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Middle Name" hint="Optional">
+                  <FieldGroup label="Middle Name">
                     <input
                       type="text"
                       name="middleName"
@@ -865,10 +865,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup
-                    label="Suffix"
-                    hint="Jr., Sr., III, etc. (Optional)"
-                  >
+                  <FieldGroup label="Suffix" hint="Jr., Sr., III, etc.">
                     <input
                       type="text"
                       name="suffix"
@@ -907,7 +904,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       <option value="Divorced">Divorced</option>
                     </select>
                   </FieldGroup>
-                  <FieldGroup label="Religion" hint="Optional">
+                  <FieldGroup label="Religion">
                     <input
                       type="text"
                       name="religion"
@@ -917,7 +914,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Citizenship" hint="Optional">
+                  <FieldGroup label="Citizenship">
                     <input
                       type="text"
                       name="citizenship"
@@ -1078,24 +1075,6 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                     />
                   </FieldGroup>
 
-                  <FieldGroup label="Province">
-                    <input
-                      type="text"
-                      value={province}
-                      readOnly
-                      className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600"
-                    />
-                  </FieldGroup>
-
-                  <FieldGroup label="Region">
-                    <input
-                      type="text"
-                      value={region}
-                      readOnly
-                      className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600"
-                    />
-                  </FieldGroup>
-
                   <FieldGroup
                     label="Full Address Preview"
                     hint="This value will be saved for the member"
@@ -1207,7 +1186,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
 
               <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
                 <h3 className="text-sm font-bold text-yellow-900 mb-3 uppercase">
-                  Health Information (Optional)
+                  Health Information
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <FieldGroup label="Blood Type" hint="Optional">
@@ -1374,7 +1353,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                   Emergency Contact
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FieldGroup label="Emergency Contact Name" hint="Optional">
+                  <FieldGroup label="Emergency Contact Name" required>
                     <input
                       type="text"
                       name="emergencyContactName"
@@ -1397,7 +1376,6 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                   </FieldGroup>
                   <FieldGroup
                     label="Emergency Contact Address"
-                    hint="Optional"
                     className="md:col-span-2"
                   >
                     <textarea
@@ -1409,7 +1387,7 @@ const AddMemberModal = ({ isOpen, onClose, onMemberAdded }) => {
                       disabled={loading}
                     />
                   </FieldGroup>
-                  <FieldGroup label="Relationship to Senior" hint="Optional">
+                  <FieldGroup label="Relationship to Senior">
                     <input
                       type="text"
                       name="emergencyContactRelation"

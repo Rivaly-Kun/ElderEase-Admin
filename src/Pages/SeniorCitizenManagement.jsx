@@ -91,6 +91,23 @@ const SeniorCitizenManagement = () => {
   }, [location.state]);
 
   const handleUnarchiveMember = async (member) => {
+    // Check if member has paid membership fee
+    const memberPayments = paymentsData.filter(
+      (p) => p.oscaID === member.oscaID && p.status === "Paid"
+    );
+
+    const hasPaidMembershipFee = memberPayments.some(
+      (p) => p.paymentFor && p.paymentFor.toLowerCase().includes("membership")
+    );
+
+    if (!hasPaidMembershipFee) {
+      alert(
+        `Cannot unarchive member with unpaid membership fee.\n\n` +
+          `${member.firstName} ${member.lastName} must pay the membership fee first before unarchiving.`
+      );
+      return;
+    }
+
     if (window.confirm(`Unarchive ${member.firstName} ${member.lastName}?`)) {
       try {
         const memberRef = dbRef(db, `members/${member.firebaseKey}`);
@@ -476,9 +493,25 @@ const SeniorCitizenManagement = () => {
 
   // Helpers
   const extractBarangay = (address) => {
-    if (!address) return "N/A";
-    const parts = address.split(",");
-    return parts.length >= 2 ? parts[parts.length - 2].trim() : "N/A";
+    if (!address) return "Pinagbuhatan";
+
+    // Check if address contains [Barangay format]
+    const bracketMatch = address.match(/\[Barangay\s+([^,\]]+)/i);
+    if (bracketMatch) {
+      return bracketMatch[1].trim();
+    }
+
+    // Old format: "Purok Catleya, Pinagbuhatan, Pasig City, Metro Manila, Manila"
+    const parts = address.split(",").map((part) => part.trim());
+    if (parts.length >= 2) {
+      // Pinagbuhatan is typically the second part after Purok
+      const barangay = parts[1];
+      // Return Pinagbuhatan if found, otherwise default to Pinagbuhatan
+      return barangay || "Pinagbuhatan";
+    }
+
+    // Default to Pinagbuhatan since all members are from this barangay
+    return "Pinagbuhatan";
   };
 
   const extractPurok = (member) => {
@@ -1005,24 +1038,6 @@ const SeniorCitizenManagement = () => {
             </div>
 
             {/* Filters */}
-            <select
-              value={selectedBarangay}
-              onChange={(e) => setSelectedBarangay(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400"
-            >
-              <option value="">All Puroks</option>
-              {[
-                "Purok Catleya",
-                "Purok Jasmin",
-                "Purok Rosal",
-                "Purok Velasco Ave / Urbano",
-              ].map((purok, i) => (
-                <option key={i} value={purok}>
-                  {purok}
-                </option>
-              ))}
-            </select>
-
             <select
               value={selectedGender}
               onChange={(e) => setSelectedGender(e.target.value)}

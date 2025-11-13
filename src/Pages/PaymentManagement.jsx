@@ -36,19 +36,12 @@ import { useMemberSearch } from "../Context/MemberSearchContext";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
-const PAYMENT_MODE_OPTIONS = [
-  "Cash",
-  "GCash",
-  "Bank Deposit",
-  "Check",
-  "Voucher",
-];
-
 const PaymentManagement = () => {
   const location = useLocation();
   const [showReceipt, setShowReceipt] = useState(null);
   const [payments, setPayments] = useState([]);
   const [seniors, setSeniors] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState(["Cash", "GCash"]); // Dynamic payment methods
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMethod, setFilterMethod] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -100,12 +93,14 @@ const PaymentManagement = () => {
   const [newPayment, setNewPayment] = useState({
     oscaID: "",
     amount: "",
-    modePay: "GCash",
+    modePay: "Cash",
     payDate: "",
     payDesc: "Annual Dues",
     authorAgent: actorLabel,
   });
   const [searchUser, setSearchUser] = useState("");
+  const [customPaymentMethod, setCustomPaymentMethod] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
 
   useEffect(() => {
     setNewPayment((prev) => ({ ...prev, authorAgent: actorLabel }));
@@ -673,7 +668,7 @@ const PaymentManagement = () => {
                   <h3 className="text-4xl font-bold">
                     ₱
                     {payments
-                      .filter((p) => p.modePay === "Over-the-counter")
+                      .filter((p) => p.modePay === "Cash")
                       .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
                       .toLocaleString()}
                   </h3>
@@ -682,7 +677,7 @@ const PaymentManagement = () => {
                   <CreditCard className="w-6 h-6" />
                 </div>
               </div>
-              <p className="text-green-200 text-xs">Over-the-counter</p>
+              <p className="text-green-200 text-xs">Cash payments</p>
             </div>
 
             {/* Online Payments */}
@@ -739,8 +734,11 @@ const PaymentManagement = () => {
                 className="border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 bg-white"
               >
                 <option value="All">All Methods</option>
-                <option value="GCash">GCash</option>
-                <option value="Over-the-counter">Over-the-counter</option>
+                {paymentMethods.map((method) => (
+                  <option key={method} value={method}>
+                    {method}
+                  </option>
+                ))}
               </select>
               <button
                 onClick={() => setShowScanner(true)}
@@ -1106,15 +1104,62 @@ const PaymentManagement = () => {
                     <CreditCard className="w-4 h-4 text-purple-600" />
                     Payment Method
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Enter payment method..."
-                    value={newPayment.modePay}
-                    onChange={(e) =>
-                      setNewPayment({ ...newPayment, modePay: e.target.value })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors"
-                  />
+                  <select
+                    value={showCustomInput ? "Custom" : newPayment.modePay}
+                    onChange={(e) => {
+                      if (e.target.value === "Custom") {
+                        setShowCustomInput(true);
+                        setCustomPaymentMethod("");
+                      } else {
+                        setShowCustomInput(false);
+                        setNewPayment({
+                          ...newPayment,
+                          modePay: e.target.value,
+                        });
+                      }
+                    }}
+                    className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors bg-white"
+                  >
+                    {paymentMethods.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                    <option value="Custom">Custom</option>
+                  </select>
+
+                  {showCustomInput && (
+                    <input
+                      type="text"
+                      placeholder="Enter custom payment method..."
+                      value={customPaymentMethod}
+                      onChange={(e) => setCustomPaymentMethod(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === "Enter" && customPaymentMethod.trim()) {
+                          const newMethod = customPaymentMethod.trim();
+                          setNewPayment({
+                            ...newPayment,
+                            modePay: newMethod,
+                          });
+                          setShowCustomInput(false);
+                          setCustomPaymentMethod("");
+                        }
+                      }}
+                      onBlur={() => {
+                        if (customPaymentMethod.trim()) {
+                          const newMethod = customPaymentMethod.trim();
+                          setNewPayment({
+                            ...newPayment,
+                            modePay: newMethod,
+                          });
+                        }
+                        setShowCustomInput(false);
+                        setCustomPaymentMethod("");
+                      }}
+                      className="w-full border-2 border-purple-300 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors"
+                      autoFocus
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1163,12 +1208,14 @@ const PaymentManagement = () => {
                   setNewPayment({
                     oscaID: "",
                     amount: "",
-                    modePay: "GCash",
+                    modePay: "Cash",
                     payDate: "",
                     payDesc: "Annual Dues",
-                    authorAgent: "Admin",
+                    authorAgent: actorLabel,
                   });
                   setSearchUser("");
+                  setShowCustomInput(false);
+                  setCustomPaymentMethod("");
                 }}
                 className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-all font-semibold"
               >
@@ -1597,9 +1644,9 @@ const PaymentManagement = () => {
                   }
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors bg-white"
                 >
-                  {PAYMENT_MODE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                  {paymentMethods.map((method) => (
+                    <option key={method} value={method}>
+                      {method}
                     </option>
                   ))}
                 </select>

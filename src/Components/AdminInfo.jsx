@@ -78,36 +78,48 @@ const AdminInfo = ({ currentUser }) => {
   const handleChangePassword = async () => {
     setPasswordError("");
 
-    // Validate current password
-    if (passwordForm.currentPassword !== admin.pass) {
-      setPasswordError("Current password is incorrect");
-      return;
-    }
-
-    // Validate new password
-    if (!passwordForm.newPassword) {
-      setPasswordError("New password is required");
-      return;
-    }
-
-    if (passwordForm.newPassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters");
-      return;
-    }
-
-    // Check if passwords match
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError("New passwords do not match");
-      return;
-    }
-
     try {
-      const adminRef = ref(db, "admin");
-      await set(adminRef, {
-        ...admin,
-        pass: passwordForm.newPassword,
-      });
+      // Fetch current password from Firebase to ensure we have the latest value
+      const adminPassRef = ref(db, "admin/pass");
+      const adminPassSnapshot = await get(adminPassRef);
+      const currentPasswordFromDB = adminPassSnapshot.exists()
+        ? String(adminPassSnapshot.val())
+        : null;
 
+      console.log("Input password:", passwordForm.currentPassword);
+      console.log("DB password:", currentPasswordFromDB);
+      console.log(
+        "Match:",
+        String(passwordForm.currentPassword) === currentPasswordFromDB
+      );
+
+      // Validate current password against database value (convert both to strings)
+      if (String(passwordForm.currentPassword) !== currentPasswordFromDB) {
+        setPasswordError("Current password is incorrect");
+        return;
+      }
+
+      // Validate new password
+      if (!passwordForm.newPassword) {
+        setPasswordError("New password is required");
+        return;
+      }
+
+      if (passwordForm.newPassword.length < 6) {
+        setPasswordError("Password must be at least 6 characters");
+        return;
+      }
+
+      // Check if passwords match
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+        setPasswordError("New passwords do not match");
+        return;
+      }
+
+      // Update password in Firebase
+      await set(adminPassRef, passwordForm.newPassword);
+
+      // Update local state
       setAdmin({ ...admin, pass: passwordForm.newPassword });
       setPasswordForm({
         currentPassword: "",
