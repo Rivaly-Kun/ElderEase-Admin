@@ -999,7 +999,7 @@ const MemberProfileModal = ({
                         Control Number
                       </label>
                       <p className="text-lg font-bold text-gray-900">
-                        {selectedMember.contrNum || "N/A"}
+                        {selectedMember.oscaID || "N/A"}
                       </p>
                     </div>
 
@@ -2544,15 +2544,23 @@ const MemberProfileModal = ({
                               )}
                             </div>
                             {/* Signature */}
-                            <div className="w-16 sm:w-20 md:w-24 h-8 sm:h-10 md:h-12 border-2 border-t-0 border-gray-400 flex items-center justify-center overflow-hidden bg-white">
+                            <div className="w-16 sm:w-20 md:w-24 h-8 sm:h-10 md:h-12 flex items-end justify-center overflow-hidden">
                               {selectedMember.signature ? (
-                                <img
-                                  src={selectedMember.signature}
-                                  alt="Signature"
-                                  className="w-full h-full object-contain p-0.5"
-                                />
+                                <div className="w-full h-full flex flex-col items-center justify-end pb-0.5">
+                                  <img
+                                    src={selectedMember.signature}
+                                    alt="Signature"
+                                    className="w-full h-full object-contain"
+                                  />
+                                  <div className="w-full border-b-2 border-gray-800"></div>
+                                </div>
                               ) : (
-                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-400 italic">No signature</p>
+                                <div className="w-full flex flex-col items-center justify-end">
+                                  <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-400 italic mb-0.5">
+                                    No signature
+                                  </p>
+                                  <div className="w-full border-b-2 border-gray-400"></div>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -3006,15 +3014,23 @@ const MemberProfileModal = ({
                             )}
                           </div>
                           {/* Signature */}
-                          <div className="w-16 sm:w-20 md:w-24 h-8 sm:h-10 md:h-12 border-2 border-t-0 border-gray-400 flex items-center justify-center overflow-hidden bg-white">
+                          <div className="w-16 sm:w-20 md:w-24 h-8 sm:h-10 md:h-12 flex items-end justify-center overflow-hidden">
                             {selectedMember.signature ? (
-                              <img
-                                src={selectedMember.signature}
-                                alt="Signature"
-                                className="w-full h-full object-contain p-0.5"
-                              />
+                              <div className="w-full h-full flex flex-col items-center justify-end pb-0.5">
+                                <img
+                                  src={selectedMember.signature}
+                                  alt="Signature"
+                                  className="w-full h-full object-contain"
+                                />
+                                <div className="w-full border-b-2 border-gray-800"></div>
+                              </div>
                             ) : (
-                              <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-400 italic">No signature</p>
+                              <div className="w-full flex flex-col items-center justify-end">
+                                <p className="text-[6px] sm:text-[7px] md:text-xs text-gray-400 italic mb-0.5">
+                                  No signature
+                                </p>
+                                <div className="w-full border-b-2 border-gray-400"></div>
+                              </div>
                             )}
                           </div>
                         </div>

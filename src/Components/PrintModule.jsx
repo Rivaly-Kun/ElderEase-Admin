@@ -1,5 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
-import { X, Printer, Download, Filter } from "lucide-react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
+import { X, Printer, Filter } from "lucide-react";
 import { ref as dbRef, get, onValue } from "firebase/database";
 import { db } from "../services/firebase";
 
@@ -15,6 +21,73 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
     barangayName: "Barangay Pinagbuhatan",
   });
   const printRef = useRef();
+
+  const derivePurok = useCallback((member = {}) => {
+    const directPurok = member.purok?.toString().trim();
+    if (directPurok) {
+      return directPurok;
+    }
+
+    const rawAddress = member.address?.toString().trim();
+    if (!rawAddress) {
+      return "N/A";
+    }
+
+    const bracketMatch = rawAddress.match(/(Purok\s+[^\[,]+)/i);
+    if (bracketMatch && bracketMatch[1]) {
+      return bracketMatch[1].trim();
+    }
+
+    const parts = rawAddress
+      .split(",")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    const partWithPurok = parts.find((segment) =>
+      /(^|\s)Purok\s+/i.test(segment)
+    );
+    if (partWithPurok) {
+      return partWithPurok;
+    }
+
+    const fallbackMatch = rawAddress.match(/Purok\s+[A-Za-z0-9\s\-/]+/i);
+    if (fallbackMatch && fallbackMatch[0]) {
+      return fallbackMatch[0].trim();
+    }
+
+    return "N/A";
+  }, []);
+
+  const sanitizeName = useCallback(
+    (value, { allowSingleWord = false } = {}) => {
+      if (!value) return "";
+
+      const raw = value.toString().trim();
+      if (!raw) return "";
+
+      if (!/[A-Za-z]/.test(raw)) {
+        return "";
+      }
+
+      const hasUppercase = /[A-Z]/.test(raw);
+      const hasWhitespace = /\s/.test(raw);
+
+      if (!allowSingleWord && !hasUppercase && !hasWhitespace) {
+        return "";
+      }
+
+      return raw;
+    },
+    []
+  );
+
+  const sanitizeDesignation = useCallback((value) => {
+    if (!value) return "";
+    const raw = value.toString().trim();
+    if (!raw) return "";
+    if (!/[A-Za-z]/.test(raw)) return "";
+    return raw;
+  }, []);
 
   // Fetch ID Settings when modal opens
   useEffect(() => {
@@ -37,10 +110,81 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
     }
   }, [isOpen]);
 
-  // Get unique puroks
-  const puroks = [...new Set(members.map((m) => m.purok || "N/A"))].filter(
-    (p) => p !== "N/A"
+  // Get unique puroks derived from member records
+  const puroks = useMemo(() => {
+    const unique = new Set();
+
+    members.forEach((member) => {
+      const label = derivePurok(member);
+      if (label && label !== "N/A") {
+        unique.add(label);
+      }
+    });
+
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [members, derivePurok]);
+
+  const presidentName = useMemo(
+    () => sanitizeName(idSettings.presidentName, { allowSingleWord: true }),
+    [idSettings.presidentName, sanitizeName]
   );
+  const presidentDesignation = useMemo(
+    () => sanitizeDesignation(idSettings.presidentDesignation) || "President",
+    [idSettings.presidentDesignation, sanitizeDesignation]
+  );
+  const secretaryName = useMemo(
+    () => sanitizeName(idSettings.secretaryName),
+    [idSettings.secretaryName, sanitizeName]
+  );
+  const secretaryDesignation = useMemo(
+    () => sanitizeDesignation(idSettings.secretaryDesignation),
+    [idSettings.secretaryDesignation, sanitizeDesignation]
+  );
+  const treasurerName = useMemo(
+    () => sanitizeName(idSettings.treasurerName),
+    [idSettings.treasurerName, sanitizeName]
+  );
+  const treasurerDesignation = useMemo(
+    () => sanitizeDesignation(idSettings.treasurerDesignation),
+    [idSettings.treasurerDesignation, sanitizeDesignation]
+  );
+
+  const signatureBlocks = useMemo(() => {
+    const blocks = [];
+
+    if (presidentName || presidentDesignation) {
+      blocks.push({
+        key: "president",
+        name: presidentName,
+        designation: presidentDesignation,
+      });
+    }
+
+    if (secretaryName && secretaryDesignation) {
+      blocks.push({
+        key: "secretary",
+        name: secretaryName,
+        designation: secretaryDesignation,
+      });
+    }
+
+    if (treasurerName && treasurerDesignation) {
+      blocks.push({
+        key: "treasurer",
+        name: treasurerName,
+        designation: treasurerDesignation,
+      });
+    }
+
+    return blocks;
+  }, [
+    presidentName,
+    presidentDesignation,
+    secretaryName,
+    secretaryDesignation,
+    treasurerName,
+    treasurerDesignation,
+  ]);
 
   // Filter members based on criteria
   useEffect(() => {
@@ -62,7 +206,7 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
 
     // Filter by purok
     if (selectedPurok) {
-      filtered = filtered.filter((m) => (m.purok || "N/A") === selectedPurok);
+      filtered = filtered.filter((m) => derivePurok(m) === selectedPurok);
     }
 
     // Filter by gender
@@ -74,14 +218,9 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
     filtered.sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""));
 
     setPrintContents(filtered);
-  }, [filterType, selectedPurok, selectedGender, members]);
+  }, [filterType, selectedPurok, selectedGender, members, derivePurok]);
 
   const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownloadPDF = () => {
-    // For now, use browser print to PDF feature
     window.print();
   };
 
@@ -241,7 +380,7 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
                             {member.contactNum || "N/A"}
                           </td>
                           <td className="border border-gray-400 px-3 py-2">
-                            {member.purok || "N/A"}
+                            {derivePurok(member)}
                           </td>
                           <td className="border border-gray-400 px-3 py-2">
                             {member.deceased
@@ -274,37 +413,43 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
                 </div>
 
                 {/* Officers Signature */}
-                <div className="mt-8 pt-6 border-t border-gray-300">
-                  <div className="grid grid-cols-3 gap-8 text-center">
-                    <div>
-                      <div className="h-12 border-b border-gray-400 mb-2"></div>
-                      <p className="font-semibold text-sm text-gray-900">
-                        {idSettings.presidentName || "Mr. Ricardo H. Tlazon"}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        {idSettings.presidentDesignation || "President"}
-                      </p>
-                    </div>
-                    <div>
-                      <div className="h-12 border-b border-gray-400 mb-2"></div>
-                      <p className="font-semibold text-sm text-gray-900">
-                        {idSettings.secretaryName || ""}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        {idSettings.secretaryDesignation || "Secretary"}
-                      </p>
-                    </div>
-                    <div>
-                      <div className="h-12 border-b border-gray-400 mb-2"></div>
-                      <p className="font-semibold text-sm text-gray-900">
-                        {idSettings.treasurerName || ""}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        {idSettings.treasurerDesignation || "Treasurer"}
-                      </p>
+                {signatureBlocks.length > 0 && (
+                  <div className="mt-10 pt-8 border-t-2 border-gray-400">
+                    <div className="flex items-center justify-center">
+                      <div
+                        className="grid gap-12 text-center"
+                        style={{
+                          gridTemplateColumns: `repeat(${Math.min(
+                            signatureBlocks.length,
+                            3
+                          )}, minmax(0, 1fr))`,
+                          maxWidth:
+                            signatureBlocks.length === 1
+                              ? "280px"
+                              : signatureBlocks.length === 2
+                              ? "560px"
+                              : "100%",
+                        }}
+                      >
+                        {signatureBlocks.map(({ key, name, designation }) => (
+                          <div key={key} className="flex flex-col items-center">
+                            <div className="w-full h-16 border-b-2 border-gray-800 mb-3"></div>
+                            {name && (
+                              <p className="font-bold text-base text-gray-900 mb-1">
+                                {name}
+                              </p>
+                            )}
+                            {designation && (
+                              <p className="text-sm text-gray-700 font-medium">
+                                {designation}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </>
             )}
           </div>
@@ -317,13 +462,6 @@ const PrintModule = ({ isOpen, onClose, members = [] }) => {
             className="px-4 py-2 text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-lg transition"
           >
             Close
-          </button>
-          <button
-            onClick={handleDownloadPDF}
-            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition flex items-center gap-2"
-          >
-            <Download size={18} />
-            Download PDF
           </button>
           <button
             onClick={handlePrint}

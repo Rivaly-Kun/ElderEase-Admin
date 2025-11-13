@@ -14,6 +14,11 @@ import {
   Settings,
   Clock,
   X,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Info,
+  Loader2,
 } from "lucide-react";
 import { ref as dbRef, onValue, remove, update } from "firebase/database";
 import { db } from "../services/firebase";
@@ -28,6 +33,138 @@ import PrintModule from "../Components/PrintModule";
 import { useMemberSearch } from "../Context/MemberSearchContext";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
+
+const PAYMENT_SUCCESS_STATUSES = new Set([
+  "paid",
+  "complete",
+  "completed",
+  "settled",
+  "success",
+  "successful",
+]);
+
+const MODAL_VARIANT_STYLES = {
+  info: {
+    accent: "bg-purple-100 text-purple-600",
+    confirmButton: "bg-purple-600 hover:bg-purple-700 text-white",
+  },
+  success: {
+    accent: "bg-green-100 text-green-600",
+    confirmButton: "bg-green-600 hover:bg-green-700 text-white",
+  },
+  warning: {
+    accent: "bg-amber-100 text-amber-600",
+    confirmButton: "bg-amber-500 hover:bg-amber-600 text-white",
+  },
+  danger: {
+    accent: "bg-red-100 text-red-600",
+    confirmButton: "bg-red-600 hover:bg-red-700 text-white",
+  },
+  error: {
+    accent: "bg-red-100 text-red-600",
+    confirmButton: "bg-red-600 hover:bg-red-700 text-white",
+  },
+};
+
+const MODAL_VARIANT_ICONS = {
+  info: Info,
+  success: CheckCircle2,
+  warning: AlertTriangle,
+  danger: XCircle,
+  error: XCircle,
+};
+
+const formatMemberName = (member = {}) => {
+  const name = `${member.firstName || ""} ${member.lastName || ""}`.trim();
+  return name || member.oscaID || "Member";
+};
+
+const parsePaymentDate = (payment = {}) => {
+  const rawDate =
+    payment.payDate ||
+    payment.date_created ||
+    payment.dateCreated ||
+    payment.createdAt ||
+    payment.timestamp;
+
+  if (!rawDate) return null;
+
+  const parsed = new Date(rawDate);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatDateTimeForDisplay = (date) => {
+  if (!date) return "Not recorded";
+  try {
+    return new Intl.DateTimeFormat("en-PH", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  } catch (err) {
+    console.error("Error formatting date:", err);
+    return date.toLocaleString();
+  }
+};
+
+const extractNumericAmount = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[^0-9.,-]/g, "");
+    const normalized = cleaned.replace(/,/g, "");
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const formatCurrencyPHP = (value) => {
+  if (value === null) return null;
+  try {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+    }).format(value);
+  } catch (err) {
+    console.error("Error formatting currency:", err);
+    return `₱${value.toFixed(2)}`;
+  }
+};
+
+const formatPaymentSummary = (payment = {}) => {
+  const date = parsePaymentDate(payment);
+  const descriptor = (payment.payDesc || payment.paymentFor || "").trim();
+  const mode = (payment.modePay || payment.modeOfPayment || "").trim();
+  const amount = formatCurrencyPHP(extractNumericAmount(payment.amount));
+
+  const parts = [];
+  if (date) {
+    parts.push(`Last paid ${formatDateTimeForDisplay(date)}`);
+  } else if (descriptor || amount || mode) {
+    parts.push("Latest payment recorded");
+  }
+  if (descriptor) parts.push(descriptor);
+  if (mode) parts.push(mode);
+  if (amount) parts.push(amount);
+
+  return parts.length > 0
+    ? parts.join(" • ")
+    : "No paid transactions recorded.";
+};
+
+const isPaymentMarkedPaid = (payment = {}) => {
+  const statusRaw =
+    payment.payment_status ||
+    payment.status ||
+    payment.paymentStatus ||
+    payment.statusText ||
+    "";
+  const status = statusRaw.toString().toLowerCase();
+  if (PAYMENT_SUCCESS_STATUSES.has(status)) return true;
+  // Accept empty status as paid (legacy records)
+  return status === "";
+};
 
 // Time constants for membership lifecycle
 const ONE_MONTH_MS = 1000 * 60 * 60 * 24 * 30;
@@ -51,6 +188,121 @@ const SeniorCitizenManagement = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [showIDSettings, setShowIDSettings] = useState(false);
   const [showPrintModule, setShowPrintModule] = useState(false);
+
+  // Global dialog management (replaces native alerts/confirms)
+  const [dialogConfig, setDialogConfig] = useState({
+    open: false,
+    title: "",
+    body: null,
+    confirmLabel: "Close",
+    cancelLabel: "Cancel",
+    showCancel: false,
+    variant: "info",
+    onConfirm: null,
+    onCancel: null,
+  });
+  const [dialogLoading, setDialogLoading] = useState(false);
+
+  const closeDialog = useCallback(() => {
+    setDialogConfig((prev) => ({ ...prev, open: false }));
+    setDialogLoading(false);
+  }, []);
+
+  const openDialog = useCallback((config) => {
+    setDialogConfig({
+      open: true,
+      title: config.title || "",
+      body: config.body || null,
+      confirmLabel: config.confirmLabel || "Close",
+      cancelLabel: config.cancelLabel || "Cancel",
+      showCancel: Boolean(config.showCancel),
+      variant: config.variant || "info",
+      onConfirm: config.onConfirm || null,
+      onCancel: config.onCancel || null,
+    });
+    setDialogLoading(false);
+  }, []);
+
+  const handleDialogCancel = () => {
+    if (dialogConfig.onCancel) {
+      dialogConfig.onCancel({ closeDialog, openDialog });
+    }
+    closeDialog();
+  };
+
+  const handleDialogConfirm = async () => {
+    if (!dialogConfig.onConfirm) {
+      closeDialog();
+      return;
+    }
+
+    setDialogLoading(true);
+    try {
+      await dialogConfig.onConfirm({ closeDialog, openDialog });
+    } finally {
+      setDialogLoading(false);
+    }
+  };
+
+  const getMemberPaymentInfo = useCallback(
+    (member) => {
+      if (!member) {
+        return {
+          paidPayments: [],
+          membershipPayments: [],
+          lastPaymentEntry: null,
+          lastPaymentDate: null,
+          lastMembershipPaymentEntry: null,
+          lastMembershipPaymentDate: null,
+        };
+      }
+
+      const paidPayments = paymentsData
+        .filter(
+          (payment) =>
+            payment?.oscaID === member.oscaID && isPaymentMarkedPaid(payment)
+        )
+        .sort((a, b) => {
+          const timeB = parsePaymentDate(b)?.getTime() || 0;
+          const timeA = parsePaymentDate(a)?.getTime() || 0;
+          return timeB - timeA;
+        });
+
+      const membershipPayments = paidPayments.filter((payment) => {
+        const descriptor = `${payment.paymentFor || ""} ${
+          payment.payDesc || ""
+        }`
+          .toLowerCase()
+          .trim();
+        return (
+          descriptor.includes("membership") ||
+          descriptor.includes("annual dues")
+        );
+      });
+
+      const lastPaymentEntry = paidPayments[0] || null;
+      const lastMembershipPaymentEntry = membershipPayments[0] || null;
+
+      return {
+        paidPayments,
+        membershipPayments,
+        lastPaymentEntry,
+        lastPaymentDate: lastPaymentEntry
+          ? parsePaymentDate(lastPaymentEntry)
+          : null,
+        lastMembershipPaymentEntry,
+        lastMembershipPaymentDate: lastMembershipPaymentEntry
+          ? parsePaymentDate(lastMembershipPaymentEntry)
+          : null,
+      };
+    },
+    [paymentsData]
+  );
+
+  const activeDialogStyles =
+    MODAL_VARIANT_STYLES[dialogConfig.variant] || MODAL_VARIANT_STYLES.info;
+  const DialogIcon =
+    MODAL_VARIANT_ICONS[dialogConfig.variant] || MODAL_VARIANT_ICONS.info;
 
   // Membership Requests
   const [membershipRequests, setMembershipRequests] = useState([]);
@@ -90,47 +342,151 @@ const SeniorCitizenManagement = () => {
     }
   }, [location.state]);
 
-  const handleUnarchiveMember = async (member) => {
-    // Check if member has paid membership fee
-    const memberPayments = paymentsData.filter(
-      (p) => p.oscaID === member.oscaID && p.status === "Paid"
-    );
+  const handleUnarchiveMember = (member) => {
+    const memberName = formatMemberName(member);
+    const { membershipPayments, lastMembershipPaymentEntry, lastPaymentEntry } =
+      getMemberPaymentInfo(member);
 
-    const hasPaidMembershipFee = memberPayments.some(
-      (p) => p.paymentFor && p.paymentFor.toLowerCase().includes("membership")
-    );
+    const hasPaidMembershipFee = membershipPayments.length > 0;
+    const hasFacialVerification = Boolean(member?.lastFacialRecognition);
 
-    if (!hasPaidMembershipFee) {
-      alert(
-        `Cannot unarchive member with unpaid membership fee.\n\n` +
-          `${member.firstName} ${member.lastName} must pay the membership fee first before unarchiving.`
-      );
+    const missingRequirements = [];
+    if (!hasPaidMembershipFee)
+      missingRequirements.push("Membership fee payment");
+    if (!hasFacialVerification) missingRequirements.push("Face verification");
+
+    if (missingRequirements.length > 0) {
+      openDialog({
+        title: "Unarchive Requirements Incomplete",
+        variant: "warning",
+        confirmLabel: "Close",
+        body: (
+          <div className="space-y-4 text-sm text-gray-600">
+            <p>
+              <span className="font-semibold text-gray-800">{memberName}</span>{" "}
+              cannot be unarchived yet.
+            </p>
+            <div>
+              <p className="font-medium text-gray-700">Missing requirements</p>
+              <ul className="mt-2 space-y-1">
+                {missingRequirements.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500"></span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-gray-700">
+                Latest payment on file
+              </p>
+              <p className="mt-1 text-gray-600">
+                {lastPaymentEntry
+                  ? formatPaymentSummary(lastPaymentEntry)
+                  : "No paid transactions recorded."}
+              </p>
+            </div>
+          </div>
+        ),
+        onConfirm: ({ closeDialog }) => closeDialog(),
+      });
       return;
     }
 
-    if (window.confirm(`Unarchive ${member.firstName} ${member.lastName}?`)) {
-      try {
-        const memberRef = dbRef(db, `members/${member.firebaseKey}`);
-        await update(memberRef, {
-          archived: false,
-          date_updated: new Date().toISOString(),
-          updatedBy: actorLabel,
-          updatedById: actorId,
-          lastActionByRole: actorRole,
-        });
-        const memberName = `${member.firstName || ""} ${
-          member.lastName || ""
-        }`.trim();
-        await auditLogger.logAction("UNARCHIVE", "Senior Citizens", {
-          recordId: member.firebaseKey,
-          recordName: memberName || member.oscaID || member.firebaseKey,
-        });
-        alert("Member unarchived successfully.");
-      } catch (error) {
-        console.error("Error unarchiving member:", error);
-        alert("Failed to unarchive member.");
-      }
-    }
+    const lastFacialDate = member?.lastFacialRecognition
+      ? new Date(member.lastFacialRecognition)
+      : null;
+
+    openDialog({
+      title: "Unarchive Member",
+      variant: "info",
+      confirmLabel: "Unarchive",
+      cancelLabel: "Cancel",
+      showCancel: true,
+      body: (
+        <div className="space-y-4 text-sm text-gray-600">
+          <p>
+            Unarchive{" "}
+            <span className="font-semibold text-gray-800">{memberName}</span>?
+          </p>
+          <div>
+            <p className="font-medium text-gray-700">Verification summary</p>
+            <ul className="mt-2 space-y-1">
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastMembershipPaymentEntry
+                    ? formatPaymentSummary(lastMembershipPaymentEntry)
+                    : lastPaymentEntry
+                    ? formatPaymentSummary(lastPaymentEntry)
+                    : "No paid transactions recorded."}
+                </span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastFacialDate
+                    ? `Last face verification ${formatDateTimeForDisplay(
+                        lastFacialDate
+                      )}`
+                    : "No face verification on record."}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      ),
+      onConfirm: async ({ closeDialog, openDialog }) => {
+        closeDialog();
+        try {
+          const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+          await update(memberRef, {
+            archived: false,
+            date_updated: new Date().toISOString(),
+            updatedBy: actorLabel,
+            updatedById: actorId,
+            lastActionByRole: actorRole,
+          });
+          await auditLogger.logAction("UNARCHIVE", "Senior Citizens", {
+            recordId: member.firebaseKey,
+            recordName: memberName,
+          });
+          openDialog({
+            title: "Member Unarchived",
+            variant: "success",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  <span className="font-semibold text-gray-800">
+                    {memberName}
+                  </span>{" "}
+                  is now active.
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        } catch (error) {
+          console.error("Error unarchiving member:", error);
+          openDialog({
+            title: "Failed to Unarchive",
+            variant: "danger",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>We couldn't unarchive the member. Please try again.</p>
+                <p className="text-xs text-gray-500">
+                  {error.message || "Unknown error occurred."}
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        }
+      },
+    });
   };
 
   // ✅ Auto-archive/unarchive based on payment/facial record activity
@@ -138,7 +494,6 @@ const SeniorCitizenManagement = () => {
     if (members.length === 0 || paymentsData.length === 0) return;
 
     const now = new Date();
-    const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
     const TWO_YEARS_MS = ONE_YEAR_MS * 2;
 
     members.forEach((member) => {
@@ -146,20 +501,7 @@ const SeniorCitizenManagement = () => {
       if (member.deceased) return;
 
       // Find this member's payment history
-      const memberPayments = paymentsData.filter(
-        (p) => p.oscaID === member.oscaID
-      );
-
-      // Get most recent payment date (if any)
-      const lastPaymentDate = memberPayments.length
-        ? new Date(
-            Math.max(
-              ...memberPayments.map((p) =>
-                new Date(p.date_created || p.payDate || 0).getTime()
-              )
-            )
-          )
-        : null;
+      const { lastPaymentDate } = getMemberPaymentInfo(member);
 
       // Get most recent facial recognition (if any)
       const lastFacialDate = member.lastFacialRecognition
@@ -237,7 +579,7 @@ const SeniorCitizenManagement = () => {
         }
       }
     });
-  }, [members, paymentsData]);
+  }, [members, paymentsData, getMemberPaymentInfo]);
 
   // Fetch members from Firebase
   useEffect(() => {
@@ -781,124 +1123,500 @@ const SeniorCitizenManagement = () => {
     memberSearch.openMemberProfile(member);
   };
 
-  const handleArchiveMember = async (member) => {
-    if (window.confirm(`Archive ${member.firstName} ${member.lastName}?`)) {
-      try {
-        const memberRef = dbRef(db, `members/${member.firebaseKey}`);
-        await update(memberRef, {
-          archived: true,
-          date_updated: new Date().toISOString(),
-          updatedBy: actorLabel,
-          updatedById: actorId,
-          lastActionByRole: actorRole,
-          archivedBy: actorLabel,
-          archivedById: actorId,
-        });
-        const memberName = `${member.firstName || ""} ${
-          member.lastName || ""
-        }`.trim();
-        await auditLogger.logMemberArchived(
-          member.firebaseKey,
-          memberName || member.oscaID || member.firebaseKey,
-          "Manual archive"
-        );
-        alert("Member archived successfully");
-      } catch (error) {
-        console.error("Error archiving member:", error);
-        alert("Failed to archive member");
-      }
+  const handleArchiveMember = (member) => {
+    const memberName = formatMemberName(member);
+    const { lastPaymentEntry, lastPaymentDate } = getMemberPaymentInfo(member);
+
+    const lastFacialDate = member?.lastFacialRecognition
+      ? new Date(member.lastFacialRecognition)
+      : null;
+
+    const lastActivityDate =
+      lastPaymentDate && lastFacialDate
+        ? new Date(
+            Math.max(lastPaymentDate.getTime(), lastFacialDate.getTime())
+          )
+        : lastPaymentDate || lastFacialDate;
+
+    const hasRecentActivity =
+      lastActivityDate && Date.now() - lastActivityDate.getTime() < ONE_YEAR_MS;
+
+    if (hasRecentActivity) {
+      openDialog({
+        title: "Cannot Archive Member",
+        variant: "warning",
+        confirmLabel: "Close",
+        body: (
+          <div className="space-y-4 text-sm text-gray-600">
+            <p>
+              <span className="font-semibold text-gray-800">{memberName}</span>{" "}
+              has recent activity within the last 12 months and must remain
+              active.
+            </p>
+            <div>
+              <p className="font-medium text-gray-700">Latest records</p>
+              <ul className="mt-2 space-y-1">
+                {lastPaymentEntry && (
+                  <li className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                    <span>{formatPaymentSummary(lastPaymentEntry)}</span>
+                  </li>
+                )}
+                {lastFacialDate && (
+                  <li className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                    <span>
+                      Last face verification{" "}
+                      {formatDateTimeForDisplay(lastFacialDate)}
+                    </span>
+                  </li>
+                )}
+              </ul>
+            </div>
+            <p className="text-xs text-gray-500">
+              Members with activity in the last 12 months cannot be archived.
+            </p>
+          </div>
+        ),
+        onConfirm: ({ closeDialog }) => closeDialog(),
+      });
+      return;
     }
+
+    openDialog({
+      title: "Archive Member",
+      variant: "warning",
+      confirmLabel: "Archive",
+      cancelLabel: "Cancel",
+      showCancel: true,
+      body: (
+        <div className="space-y-4 text-sm text-gray-600">
+          <p>
+            Archive{" "}
+            <span className="font-semibold text-gray-800">{memberName}</span>?
+            They will move to the Archived list.
+          </p>
+          <div>
+            <p className="font-medium text-gray-700">Recent records</p>
+            <ul className="mt-2 space-y-1">
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastPaymentEntry
+                    ? formatPaymentSummary(lastPaymentEntry)
+                    : "No paid transactions recorded."}
+                </span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastFacialDate
+                    ? `Last face verification ${formatDateTimeForDisplay(
+                        lastFacialDate
+                      )}`
+                    : "No face verification on record."}
+                </span>
+              </li>
+            </ul>
+          </div>
+          <p className="text-xs text-gray-500">
+            You can restore archived members anytime from the Archived tab.
+          </p>
+        </div>
+      ),
+      onConfirm: async ({ closeDialog, openDialog }) => {
+        closeDialog();
+        try {
+          const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+          await update(memberRef, {
+            archived: true,
+            date_updated: new Date().toISOString(),
+            updatedBy: actorLabel,
+            updatedById: actorId,
+            lastActionByRole: actorRole,
+            archivedBy: actorLabel,
+            archivedById: actorId,
+          });
+          await auditLogger.logMemberArchived(
+            member.firebaseKey,
+            memberName,
+            "Manual archive"
+          );
+          openDialog({
+            title: "Member Archived",
+            variant: "success",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  <span className="font-semibold text-gray-800">
+                    {memberName}
+                  </span>{" "}
+                  has been moved to Archived members.
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        } catch (error) {
+          console.error("Error archiving member:", error);
+          openDialog({
+            title: "Failed to Archive",
+            variant: "danger",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>We couldn't archive the member. Please try again.</p>
+                <p className="text-xs text-gray-500">
+                  {error.message || "Unknown error occurred."}
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        }
+      },
+    });
   };
 
-  const handleDeleteMember = async (member) => {
-    if (
-      window.confirm(
-        `Delete ${member.firstName} ${member.lastName}? This cannot be undone.`
-      )
-    ) {
-      try {
-        const memberRef = dbRef(db, `members/${member.firebaseKey}`);
-        await remove(memberRef);
-        const memberName = `${member.firstName || ""} ${
-          member.lastName || ""
-        }`.trim();
-        await auditLogger.logMemberDeleted(
-          member.firebaseKey,
-          memberName || member.oscaID || member.firebaseKey,
-          member
-        );
-        alert("Member deleted successfully");
-      } catch (error) {
-        console.error("Error deleting member:", error);
-        alert("Failed to delete member");
-      }
-    }
+  const handleDeleteMember = (member) => {
+    const memberName = formatMemberName(member);
+
+    openDialog({
+      title: "Delete Member",
+      variant: "danger",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      showCancel: true,
+      body: (
+        <div className="space-y-4 text-sm text-gray-600">
+          <p>
+            Permanently delete{" "}
+            <span className="font-semibold text-gray-800">{memberName}</span>?
+          </p>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+            This action cannot be undone. All records for this member will be
+            removed.
+          </div>
+        </div>
+      ),
+      onConfirm: async ({ closeDialog, openDialog }) => {
+        closeDialog();
+        try {
+          const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+          await remove(memberRef);
+          await auditLogger.logMemberDeleted(
+            member.firebaseKey,
+            memberName,
+            member
+          );
+          openDialog({
+            title: "Member Deleted",
+            variant: "success",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  <span className="font-semibold text-gray-800">
+                    {memberName}
+                  </span>{" "}
+                  has been removed from the database.
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        } catch (error) {
+          console.error("Error deleting member:", error);
+          openDialog({
+            title: "Delete Failed",
+            variant: "danger",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>We couldn't delete the member. Please try again.</p>
+                <p className="text-xs text-gray-500">
+                  {error.message || "Unknown error occurred."}
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        }
+      },
+    });
   };
 
   // ✅ Mark member as deceased manually
-  const handleMarkAsDeceased = async (member) => {
-    if (
-      window.confirm(`Mark ${member.firstName} ${member.lastName} as deceased?`)
-    ) {
-      try {
-        const memberRef = dbRef(db, `members/${member.firebaseKey}`);
-        await update(memberRef, {
-          deceased: true,
-          date_updated: new Date().toISOString(),
-          updatedBy: actorLabel,
-          updatedById: actorId,
-          lastActionByRole: actorRole,
-        });
-        const memberName = `${member.firstName || ""} ${
-          member.lastName || ""
-        }`.trim();
-        await auditLogger.logAction("MARK_DECEASED", "Senior Citizens", {
-          recordId: member.firebaseKey,
-          recordName: memberName || member.oscaID || member.firebaseKey,
-        });
-        alert("Member marked as deceased.");
-      } catch (err) {
-        console.error("Error marking as deceased:", err);
-        alert("Failed to update member.");
-      }
-    }
+  const handleMarkAsDeceased = (member) => {
+    const memberName = formatMemberName(member);
+    const { lastPaymentEntry, lastPaymentDate } = getMemberPaymentInfo(member);
+
+    const lastFacialDate = member?.lastFacialRecognition
+      ? new Date(member.lastFacialRecognition)
+      : null;
+
+    const lastActivityDate =
+      lastPaymentDate && lastFacialDate
+        ? new Date(
+            Math.max(lastPaymentDate.getTime(), lastFacialDate.getTime())
+          )
+        : lastPaymentDate || lastFacialDate;
+
+    const hasRecentActivity =
+      lastActivityDate && Date.now() - lastActivityDate.getTime() < ONE_YEAR_MS;
+
+    openDialog({
+      title: "Mark as Deceased",
+      variant: "danger",
+      confirmLabel: "Mark as Deceased",
+      cancelLabel: "Cancel",
+      showCancel: true,
+      body: (
+        <div className="space-y-4 text-sm text-gray-600">
+          {hasRecentActivity && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Recent activity detected within the last 12 months
+            </div>
+          )}
+          <p>
+            Move{" "}
+            <span className="font-semibold text-gray-800">{memberName}</span> to
+            the Deceased list?
+          </p>
+          <div>
+            <p className="font-medium text-gray-700">Latest records</p>
+            <ul className="mt-2 space-y-1">
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastPaymentEntry
+                    ? formatPaymentSummary(lastPaymentEntry)
+                    : "No paid transactions recorded."}
+                </span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastFacialDate
+                    ? `Last face verification ${formatDateTimeForDisplay(
+                        lastFacialDate
+                      )}`
+                    : "No face verification on record."}
+                </span>
+              </li>
+            </ul>
+          </div>
+          <p className="text-xs text-gray-500">
+            This update is logged in the audit trail.
+          </p>
+        </div>
+      ),
+      onConfirm: async ({ closeDialog, openDialog }) => {
+        closeDialog();
+        try {
+          const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+          await update(memberRef, {
+            deceased: true,
+            date_updated: new Date().toISOString(),
+            updatedBy: actorLabel,
+            updatedById: actorId,
+            lastActionByRole: actorRole,
+          });
+          await auditLogger.logAction("MARK_DECEASED", "Senior Citizens", {
+            recordId: member.firebaseKey,
+            recordName: memberName,
+          });
+          openDialog({
+            title: "Marked as Deceased",
+            variant: "success",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  <span className="font-semibold text-gray-800">
+                    {memberName}
+                  </span>{" "}
+                  is now listed under Deceased members.
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        } catch (error) {
+          console.error("Error marking as deceased:", error);
+          openDialog({
+            title: "Update Failed",
+            variant: "danger",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  We couldn't mark the member as deceased. Please try again.
+                </p>
+                <p className="text-xs text-gray-500">
+                  {error.message || "Unknown error occurred."}
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        }
+      },
+    });
   };
 
   // ✅ Restore deceased member to active
-  const handleRestoreFromDeceased = async (member) => {
-    if (
-      window.confirm(
-        `Restore ${member.firstName} ${member.lastName} to active status?`
-      )
-    ) {
-      try {
-        const memberRef = dbRef(db, `members/${member.firebaseKey}`);
-        await update(memberRef, {
-          deceased: false,
-          archived: false,
-          date_updated: new Date().toISOString(),
-          updatedBy: actorLabel,
-          updatedById: actorId,
-          lastActionByRole: actorRole,
-        });
-        const memberName = `${member.firstName || ""} ${
-          member.lastName || ""
-        }`.trim();
-        await auditLogger.logAction(
-          "RESTORE_FROM_DECEASED",
-          "Senior Citizens",
-          {
-            recordId: member.firebaseKey,
-            recordName: memberName || member.oscaID || member.firebaseKey,
-          }
-        );
-        setActiveTab("active");
-        alert("Member restored to active status.");
-      } catch (err) {
-        console.error("Error restoring member:", err);
-        alert("Failed to restore member.");
-      }
+  const handleRestoreFromDeceased = (member) => {
+    const memberName = formatMemberName(member);
+    const { membershipPayments, lastMembershipPaymentEntry, lastPaymentEntry } =
+      getMemberPaymentInfo(member);
+
+    const hasPaidMembershipFee = membershipPayments.length > 0;
+    const lastFacialDate = member?.lastFacialRecognition
+      ? new Date(member.lastFacialRecognition)
+      : null;
+
+    const missingRequirements = [];
+    if (!hasPaidMembershipFee)
+      missingRequirements.push("Membership fee payment");
+    if (!lastFacialDate) missingRequirements.push("Face verification");
+
+    if (missingRequirements.length > 0) {
+      openDialog({
+        title: "Restore Requirements Incomplete",
+        variant: "warning",
+        confirmLabel: "Close",
+        body: (
+          <div className="space-y-4 text-sm text-gray-600">
+            <p>
+              <span className="font-semibold text-gray-800">{memberName}</span>{" "}
+              cannot be restored yet.
+            </p>
+            <div>
+              <p className="font-medium text-gray-700">Missing requirements</p>
+              <ul className="mt-2 space-y-1">
+                {missingRequirements.map((item) => (
+                  <li key={item} className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-500"></span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-gray-700">
+                Latest payment on file
+              </p>
+              <p className="mt-1 text-gray-600">
+                {lastPaymentEntry
+                  ? formatPaymentSummary(lastPaymentEntry)
+                  : "No paid transactions recorded."}
+              </p>
+            </div>
+          </div>
+        ),
+        onConfirm: ({ closeDialog }) => closeDialog(),
+      });
+      return;
     }
+
+    openDialog({
+      title: "Restore Member",
+      variant: "info",
+      confirmLabel: "Restore",
+      cancelLabel: "Cancel",
+      showCancel: true,
+      body: (
+        <div className="space-y-4 text-sm text-gray-600">
+          <p>
+            Restore{" "}
+            <span className="font-semibold text-gray-800">{memberName}</span> to
+            active status?
+          </p>
+          <div>
+            <p className="font-medium text-gray-700">Verification summary</p>
+            <ul className="mt-2 space-y-1">
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastMembershipPaymentEntry
+                    ? formatPaymentSummary(lastMembershipPaymentEntry)
+                    : lastPaymentEntry
+                    ? formatPaymentSummary(lastPaymentEntry)
+                    : "No paid transactions recorded."}
+                </span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-500"></span>
+                <span>
+                  {lastFacialDate
+                    ? `Last face verification ${formatDateTimeForDisplay(
+                        lastFacialDate
+                      )}`
+                    : "No face verification on record."}
+                </span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      ),
+      onConfirm: async ({ closeDialog, openDialog }) => {
+        closeDialog();
+        try {
+          const memberRef = dbRef(db, `members/${member.firebaseKey}`);
+          await update(memberRef, {
+            deceased: false,
+            archived: false,
+            date_updated: new Date().toISOString(),
+            updatedBy: actorLabel,
+            updatedById: actorId,
+            lastActionByRole: actorRole,
+          });
+          await auditLogger.logAction(
+            "RESTORE_FROM_DECEASED",
+            "Senior Citizens",
+            {
+              recordId: member.firebaseKey,
+              recordName: memberName,
+            }
+          );
+          setActiveTab("active");
+          openDialog({
+            title: "Member Restored",
+            variant: "success",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>
+                  <span className="font-semibold text-gray-800">
+                    {memberName}
+                  </span>{" "}
+                  is now active again.
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        } catch (error) {
+          console.error("Error restoring member:", error);
+          openDialog({
+            title: "Restore Failed",
+            variant: "danger",
+            confirmLabel: "Close",
+            body: (
+              <div className="space-y-2 text-sm text-gray-600">
+                <p>We couldn't restore the member. Please try again.</p>
+                <p className="text-xs text-gray-500">
+                  {error.message || "Unknown error occurred."}
+                </p>
+              </div>
+            ),
+            onConfirm: ({ closeDialog }) => closeDialog(),
+          });
+        }
+      },
+    });
   };
 
   if (currentUserLoading) {
@@ -1313,11 +2031,26 @@ const SeniorCitizenManagement = () => {
           onMemberFound={(member) => {
             // Guard: Check if member is archived or deceased
             if (member.archived || isDeceased(member)) {
-              alert(
-                `To access this account, the member must be active. Current status: ${
-                  isDeceased(member) ? "Deceased" : "Archived"
-                }`
-              );
+              const statusLabel = isDeceased(member) ? "Deceased" : "Archived";
+              openDialog({
+                title: "Member Not Active",
+                variant: "warning",
+                confirmLabel: "Close",
+                body: (
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <p>
+                      <span className="font-semibold text-gray-800">
+                        {formatMemberName(member)}
+                      </span>{" "}
+                      is currently marked as {statusLabel}.
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Only active accounts can be opened from the scanner.
+                    </p>
+                  </div>
+                ),
+                onConfirm: ({ closeDialog }) => closeDialog(),
+              });
               return;
             }
             console.log("📱 Opening profile modal for:", member);
@@ -1457,6 +2190,63 @@ const SeniorCitizenManagement = () => {
             setShowRequestsCenter(true);
           }}
         />
+      )}
+
+      {dialogConfig.open && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+            <div className="flex items-start gap-3 border-b border-gray-100 px-6 py-4">
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-full ${activeDialogStyles.accent}`}
+              >
+                <DialogIcon className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {dialogConfig.title}
+                </h3>
+              </div>
+              <button
+                onClick={handleDialogCancel}
+                className="rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Close dialog"
+                disabled={dialogLoading}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              {dialogConfig.body && (
+                <div className="text-sm text-gray-600">{dialogConfig.body}</div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+              {dialogConfig.showCancel && (
+                <button
+                  onClick={handleDialogCancel}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                  disabled={dialogLoading}
+                >
+                  {dialogConfig.cancelLabel}
+                </button>
+              )}
+              <button
+                onClick={handleDialogConfirm}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition disabled:opacity-60 ${activeDialogStyles.confirmButton}`}
+                disabled={dialogLoading}
+              >
+                {dialogLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Processing...
+                  </span>
+                ) : (
+                  dialogConfig.confirmLabel
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

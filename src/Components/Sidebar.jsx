@@ -2,13 +2,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { NAVIGATION_MODULES } from "../utils/navigationConfig";
 import { useAuth } from "../Context/AuthContext";
-import { LogOut, AlertCircle } from "lucide-react";
+import { LogOut, AlertCircle, Loader2 } from "lucide-react";
 
 const Sidebar = ({ activeMenu, setActiveMenu }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, hasModuleAccess, isSuperAdmin, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const accessibleMenuItems = useMemo(() => {
     return NAVIGATION_MODULES.filter((item) =>
@@ -125,9 +126,24 @@ const Sidebar = ({ activeMenu, setActiveMenu }) => {
         </button>
       </div>
 
+      {/* === Logout Loading Overlay === */}
+      {isLoggingOut && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[10000] backdrop-blur-md">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
+            <Loader2 className="w-16 h-16 mx-auto mb-4 text-purple-600 animate-spin" />
+            <h3 className="text-xl font-bold text-gray-800 mb-2">
+              Logging you out...
+            </h3>
+            <p className="text-sm text-gray-600">
+              Please wait while we return you to the login screen.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* === Logout Confirmation Modal === */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+      {showLogoutConfirm && !isLoggingOut && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border-l-4 border-red-600 z-[10000]">
             <div className="p-6">
               <div className="flex items-start gap-4">
@@ -152,18 +168,20 @@ const Sidebar = ({ activeMenu, setActiveMenu }) => {
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setShowLogoutConfirm(false);
+                    setIsLoggingOut(true);
+
+                    // Wait for logout animation (3 seconds)
+                    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+                    // Perform logout
                     logout();
-                    sessionStorage.setItem(
-                      "logoutTransition",
-                      String(Date.now())
-                    );
-                    setTimeout(() => {
-                      window.location.href = "/";
-                    }, 300);
+
+                    // Redirect to login
+                    window.location.href = "/";
                   }}
-                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold flex items-center justify-center gap-2"
                 >
                   Logout
                 </button>

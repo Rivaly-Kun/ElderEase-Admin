@@ -5,7 +5,6 @@ import { ref, get, child } from "firebase/database";
 import { useNavigate } from "react-router-dom";
 import { storeSessionUser } from "./utils/sessionUser";
 import SMSMFAVerification from "./Components/SMSMFAVerification";
-import { Loader } from "lucide-react";
 
 function App() {
   const [username, setUsername] = useState("");
@@ -15,28 +14,8 @@ function App() {
   const [suspendedUser, setSuspendedUser] = useState(null);
   const [showMFAVerification, setShowMFAVerification] = useState(false);
   const [mfaPendingUser, setMFAPendingUser] = useState(null);
-  const [showLogoutLoader, setShowLogoutLoader] = useState(false);
 
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const flag = sessionStorage.getItem("logoutTransition");
-    let timer;
-
-    if (flag) {
-      sessionStorage.removeItem("logoutTransition");
-      setShowLogoutLoader(true);
-      timer = setTimeout(() => {
-        setShowLogoutLoader(false);
-      }, 3000);
-    }
-
-    return () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-  }, []);
 
   const sanitizeStatus = (value) => {
     const normalized = String(value ?? "active")
@@ -253,15 +232,6 @@ function App() {
 
   return (
     <>
-      {showLogoutLoader && (
-        <div className="logout-loading-overlay">
-          <div className="logout-loading-card">
-            <Loader className="logout-spinner" />
-            <h3>Logging you out...</h3>
-            <p>Please wait while we return you to the login screen.</p>
-          </div>
-        </div>
-      )}
       <div className="container">
         <div className="left-section">
           <div className="login-card">
