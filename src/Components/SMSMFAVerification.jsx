@@ -27,17 +27,33 @@ const SMSMFAVerification = ({ phoneNumber, onVerify, onCancel }) => {
           container.innerHTML = "";
         }
 
-        // Set up visible reCAPTCHA verifier for Firebase Phone Auth (better for debugging)
-        const verifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-          size: "normal", // Changed from invisible to normal for testing
-          callback: (response) => {
-            console.log("[Firebase SMS MFA] reCAPTCHA verified successfully");
-          },
-          "expired-callback": () => {
-            console.log("[Firebase SMS MFA] reCAPTCHA expired, please retry");
-            setError("reCAPTCHA expired. Please try again.");
-          },
-        });
+        // Set up reCAPTCHA verifier with your Firebase reCAPTCHA site key
+        // Site key: 6LfrvwosAAAAAPGwMK-G7r_jA3Lcea9MPvZcyckQ
+        window.recaptchaVerifier = new RecaptchaVerifier(
+          auth,
+          "recaptcha-container",
+          {
+            size: "normal",
+            callback: (response) => {
+              console.log(
+                "[Firebase SMS MFA] ✅ reCAPTCHA verified successfully"
+              );
+              console.log("[Firebase SMS MFA] Response token:", response);
+            },
+            "expired-callback": () => {
+              console.log(
+                "[Firebase SMS MFA] ⚠️ reCAPTCHA expired, please retry"
+              );
+              setError("reCAPTCHA expired. Please try again.");
+            },
+            "error-callback": (error) => {
+              console.error("[Firebase SMS MFA] ❌ reCAPTCHA error:", error);
+              setError("reCAPTCHA error. Please refresh the page.");
+            },
+          }
+        );
+
+        const verifier = window.recaptchaVerifier;
 
         console.log("[Firebase SMS MFA] Rendering reCAPTCHA...");
         await verifier.render();
@@ -118,11 +134,15 @@ const SMSMFAVerification = ({ phoneNumber, onVerify, onCancel }) => {
 
     return () => {
       clearInterval(timer);
-      if (recaptchaVerifier) {
-        recaptchaVerifier.clear();
+      if (window.recaptchaVerifier) {
+        try {
+          window.recaptchaVerifier.clear();
+          window.recaptchaVerifier = null;
+        } catch (error) {
+          console.log("[Firebase SMS MFA] Error clearing reCAPTCHA:", error);
+        }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phoneNumber]);
 
   const handleVerifyCode = async () => {
@@ -177,8 +197,8 @@ const SMSMFAVerification = ({ phoneNumber, onVerify, onCancel }) => {
       );
 
       // Clear existing reCAPTCHA and create new one for resend
-      if (recaptchaVerifier) {
-        recaptchaVerifier.clear();
+      if (window.recaptchaVerifier) {
+        window.recaptchaVerifier.clear();
       }
 
       const container = document.getElementById("recaptcha-container");
@@ -186,17 +206,29 @@ const SMSMFAVerification = ({ phoneNumber, onVerify, onCancel }) => {
         container.innerHTML = "";
       }
 
-      const newVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-        size: "invisible",
-        callback: (response) => {
-          console.log("[Firebase SMS MFA] reCAPTCHA verified (resend)");
-        },
-        "expired-callback": () => {
-          console.log("[Firebase SMS MFA] reCAPTCHA expired (resend)");
-          setError("reCAPTCHA expired. Please try again.");
-        },
-      });
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "recaptcha-container",
+        {
+          size: "normal",
+          callback: (response) => {
+            console.log("[Firebase SMS MFA] ✅ reCAPTCHA verified (resend)");
+          },
+          "expired-callback": () => {
+            console.log("[Firebase SMS MFA] ⚠️ reCAPTCHA expired (resend)");
+            setError("reCAPTCHA expired. Please try again.");
+          },
+          "error-callback": (error) => {
+            console.error(
+              "[Firebase SMS MFA] ❌ reCAPTCHA error (resend):",
+              error
+            );
+            setError("reCAPTCHA error. Please refresh the page.");
+          },
+        }
+      );
 
+      const newVerifier = window.recaptchaVerifier;
       await newVerifier.render();
       setRecaptchaVerifier(newVerifier);
 
