@@ -412,7 +412,15 @@ const Dashboard = () => {
         members.forEach((member) => {
           if (isMemberDeceased(member)) return;
 
-          const purok = member.purok?.trim();
+          // Extract purok from address field (same logic as MemberProfileModal)
+          let purok = member.purok?.trim();
+
+          // If no direct purok field, extract from address
+          if (!purok && member.address) {
+            const parts = member.address.split(",").map((p) => p.trim());
+            purok = parts[0]; // Extract Purok from position [0] in "Purok X, Pinagbuhatan, City..."
+          }
+
           if (purok) {
             purokSet.add(purok);
             purokCounts[purok] = (purokCounts[purok] || 0) + 1;

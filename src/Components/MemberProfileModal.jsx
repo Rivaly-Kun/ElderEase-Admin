@@ -153,6 +153,7 @@ const DEFAULT_MEMBER_FORM = {
   sssId: "",
   nationalId: "",
   barangayId: "",
+  controlNumber: "",
 
   // Living Arrangement
   livingArr: "",
@@ -993,14 +994,25 @@ const MemberProfileModal = ({
                       </p>
                     </div>
 
-                    {/* Control Number - Read Only */}
+                    {/* Control Number */}
                     <div className="bg-white rounded-xl p-4 shadow-sm">
                       <label className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-1 block">
                         Control Number
                       </label>
-                      <p className="text-lg font-bold text-gray-900">
-                        {selectedMember.oscaID || "N/A"}
-                      </p>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          name="controlNumber"
+                          value={formData.controlNumber || ""}
+                          onChange={handleChange}
+                          className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg font-bold"
+                          placeholder="Enter control number"
+                        />
+                      ) : (
+                        <p className="text-lg font-bold text-gray-900">
+                          {selectedMember.controlNumber || "N/A"}
+                        </p>
+                      )}
                     </div>
 
                     {/* First Name */}
