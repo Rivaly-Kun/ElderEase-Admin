@@ -155,6 +155,10 @@ const Sidebar = ({ activeMenu, setActiveMenu }) => {
                   onClick={() => {
                     setShowLogoutConfirm(false);
                     logout();
+                    sessionStorage.setItem(
+                      "logoutTransition",
+                      String(Date.now())
+                    );
                     setTimeout(() => {
                       window.location.href = "/";
                     }, 300);
