@@ -19,6 +19,9 @@ export const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
+// reCAPTCHA site key for Firebase Phone Authentication
+export const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+
 const app = initializeApp(firebaseConfig);
 
 export const db = getDatabase(app);

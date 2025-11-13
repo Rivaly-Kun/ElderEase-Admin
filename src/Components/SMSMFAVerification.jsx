@@ -27,8 +27,12 @@ const SMSMFAVerification = ({ phoneNumber, onVerify, onCancel }) => {
           container.innerHTML = "";
         }
 
-        // Set up reCAPTCHA verifier with your Firebase reCAPTCHA site key
-        // Site key: 6LfrvwosAAAAAPGwMK-G7r_jA3Lcea9MPvZcyckQ
+        // Firebase RecaptchaVerifier automatically uses the reCAPTCHA configured in Firebase Console
+        // You MUST configure the reCAPTCHA site key in Firebase Console, not in code
+        console.log(
+          "[Firebase SMS MFA] Initializing Firebase Phone Auth with reCAPTCHA..."
+        );
+
         window.recaptchaVerifier = new RecaptchaVerifier(
           auth,
           "recaptcha-container",
