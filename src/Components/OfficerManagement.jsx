@@ -583,196 +583,206 @@ const OfficerManagement = ({ currentUser }) => {
       </div>
 
       {/* Table */}
-      <div className="w-full border border-gray-300 rounded-lg overflow-hidden">
-        <table className="w-full table-auto">
-          <thead className="bg-gradient-to-r from-purple-600 to-purple-700">
-            <tr>
-              <th className="px-4 py-4 text-left text-white font-bold min-w-[120px]">
-                Name
-              </th>
-              <th className="px-4 py-4 text-left text-white font-bold min-w-[180px]">
-                Email
-              </th>
-              <th className="px-4 py-4 text-left text-white font-bold min-w-[100px]">
-                Role
-              </th>
-              <th className="px-4 py-4 text-left text-white font-bold min-w-[130px]">
-                Department
-              </th>
-              <th className="px-4 py-4 text-left text-white font-bold min-w-[90px]">
-                Status
-              </th>
-              <th className="px-4 py-4 text-left text-white font-bold min-w-[140px]">
-                Created
-              </th>
-              <th className="px-4 py-4 text-center text-white font-bold min-w-[120px]">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {officers.length === 0 ? (
+      <div className="w-full border border-gray-300 rounded-lg bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1000px] table-auto">
+            <thead className="bg-gradient-to-r from-purple-600 to-purple-700">
               <tr>
-                <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                  <AlertCircle
-                    className="mx-auto mb-2 text-gray-400"
-                    size={32}
-                  />
-                  <p>No officers found</p>
-                </td>
+                <th className="px-4 py-4 text-left text-white font-bold min-w-[120px]">
+                  Name
+                </th>
+                <th className="px-4 py-4 text-left text-white font-bold min-w-[180px]">
+                  Email
+                </th>
+                <th className="px-4 py-4 text-left text-white font-bold min-w-[100px]">
+                  Role
+                </th>
+                <th className="px-4 py-4 text-left text-white font-bold min-w-[130px]">
+                  Department
+                </th>
+                <th className="px-4 py-4 text-left text-white font-bold min-w-[90px]">
+                  Status
+                </th>
+                <th className="px-4 py-4 text-left text-white font-bold min-w-[140px]">
+                  Created
+                </th>
+                <th className="px-4 py-4 text-center text-white font-bold min-w-[120px]">
+                  Actions
+                </th>
               </tr>
-            ) : (
-              officers.map((officer, index) => (
-                <tr
-                  key={officer.id}
-                  className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                >
-                  {/* Name with Avatar */}
-                  <td className="px-4 py-4 min-w-[120px]">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm">
-                        {officer.displayName.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="font-semibold text-gray-900 text-sm truncate">
-                        {officer.displayName}
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* Email */}
-                  <td className="px-4 py-4 min-w-[180px]">
-                    <div className="flex items-center gap-2 text-gray-600 text-sm">
-                      <Mail size={14} className="text-gray-400 flex-shrink-0" />
-                      <span className="truncate">{officer.email}</span>
-                    </div>
-                  </td>
-
-                  {/* Role Selector with Switch */}
-                  <td className="px-4 py-4 min-w-[100px]">
-                    <select
-                      value={officer.role}
-                      onChange={(e) =>
-                        handleChangeRole(
-                          officer.id,
-                          officer.displayName,
-                          e.target.value
-                        )
-                      }
-                      className="px-2 py-1 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-900 text-sm w-full"
-                    >
-                      {roles.length > 0 ? (
-                        roles.map((role) => (
-                          <option
-                            key={role.id || role.roleName || role.name}
-                            value={role.id || role.roleName || role.name}
-                          >
-                            {role.roleName || role.name || role.id}
-                          </option>
-                        ))
-                      ) : (
-                        <>
-                          <option value="Admin">Admin</option>
-                          <option value="Officer">Officer</option>
-                          <option value="Viewer">Viewer</option>
-                        </>
-                      )}
-                    </select>
-                  </td>
-
-                  {/* Department */}
-                  <td className="px-4 py-4 text-gray-600 text-sm min-w-[130px] truncate">
-                    {officer.department || "-"}
-                  </td>
-
-                  {/* Status Toggle Switch */}
-                  <td className="px-4 py-4 min-w-[90px]">
-                    <div className="flex items-center">
-                      <label className="relative inline-block h-6 w-11">
-                        <input
-                          type="checkbox"
-                          checked={officer.status === "active"}
-                          onChange={(e) =>
-                            handleChangeStatus(
-                              officer.id,
-                              e.target.checked ? "active" : "suspended"
-                            )
-                          }
-                          className="sr-only"
-                        />
-                        <div
-                          className={`block w-full h-full rounded-full transition ${
-                            officer.status === "active"
-                              ? "bg-green-500"
-                              : "bg-red-400"
-                          }`}
-                        ></div>
-                        <div
-                          className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${
-                            officer.status === "active" ? "translate-x-5" : ""
-                          }`}
-                        ></div>
-                      </label>
-                      <span
-                        className={`ml-3 text-sm font-semibold ${
-                          officer.status === "active"
-                            ? "text-green-700"
-                            : "text-red-600"
-                        }`}
-                      >
-                        <span className="flex items-center gap-1">
-                          {officer.status === "active" ? (
-                            <CheckCircle size={14} />
-                          ) : (
-                            <AlertCircle size={14} />
-                          )}
-                          {officer.status === "active" ? "Active" : "Suspended"}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* Created Date */}
-                  <td className="px-4 py-4 text-xs text-gray-600 min-w-[140px]">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {officer.createdAt
-                          ? new Date(officer.createdAt).toLocaleDateString()
-                          : "N/A"}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {officer.createdAt
-                          ? new Date(officer.createdAt).toLocaleTimeString()
-                          : ""}
-                      </p>
-                    </div>
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-4 min-w-[120px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => openEditModal(officer)}
-                        className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg transition"
-                        title="Edit"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleDeleteOfficer(officer.id, officer.displayName)
-                        }
-                        className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {officers.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan="7"
+                    className="px-6 py-8 text-center text-gray-500"
+                  >
+                    <AlertCircle
+                      className="mx-auto mb-2 text-gray-400"
+                      size={32}
+                    />
+                    <p>No officers found</p>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                officers.map((officer, index) => (
+                  <tr
+                    key={officer.id}
+                    className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                  >
+                    {/* Name with Avatar */}
+                    <td className="px-4 py-4 min-w-[120px]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm">
+                          {officer.displayName.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="font-semibold text-gray-900 text-sm truncate">
+                          {officer.displayName}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Email */}
+                    <td className="px-4 py-4 min-w-[180px]">
+                      <div className="flex items-center gap-2 text-gray-600 text-sm">
+                        <Mail
+                          size={14}
+                          className="text-gray-400 flex-shrink-0"
+                        />
+                        <span className="truncate">{officer.email}</span>
+                      </div>
+                    </td>
+
+                    {/* Role Selector with Switch */}
+                    <td className="px-4 py-4 min-w-[100px]">
+                      <select
+                        value={officer.role}
+                        onChange={(e) =>
+                          handleChangeRole(
+                            officer.id,
+                            officer.displayName,
+                            e.target.value
+                          )
+                        }
+                        className="px-2 py-1 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-900 text-sm w-full"
+                      >
+                        {roles.length > 0 ? (
+                          roles.map((role) => (
+                            <option
+                              key={role.id || role.roleName || role.name}
+                              value={role.id || role.roleName || role.name}
+                            >
+                              {role.roleName || role.name || role.id}
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="Admin">Admin</option>
+                            <option value="Officer">Officer</option>
+                            <option value="Viewer">Viewer</option>
+                          </>
+                        )}
+                      </select>
+                    </td>
+
+                    {/* Department */}
+                    <td className="px-4 py-4 text-gray-600 text-sm min-w-[130px] truncate">
+                      {officer.department || "-"}
+                    </td>
+
+                    {/* Status Toggle Switch */}
+                    <td className="px-4 py-4 min-w-[90px]">
+                      <div className="flex items-center">
+                        <label className="relative inline-block h-6 w-11">
+                          <input
+                            type="checkbox"
+                            checked={officer.status === "active"}
+                            onChange={(e) =>
+                              handleChangeStatus(
+                                officer.id,
+                                e.target.checked ? "active" : "suspended"
+                              )
+                            }
+                            className="sr-only"
+                          />
+                          <div
+                            className={`block w-full h-full rounded-full transition ${
+                              officer.status === "active"
+                                ? "bg-green-500"
+                                : "bg-red-400"
+                            }`}
+                          ></div>
+                          <div
+                            className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition transform ${
+                              officer.status === "active" ? "translate-x-5" : ""
+                            }`}
+                          ></div>
+                        </label>
+                        <span
+                          className={`ml-3 text-sm font-semibold ${
+                            officer.status === "active"
+                              ? "text-green-700"
+                              : "text-red-600"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1">
+                            {officer.status === "active" ? (
+                              <CheckCircle size={14} />
+                            ) : (
+                              <AlertCircle size={14} />
+                            )}
+                            {officer.status === "active"
+                              ? "Active"
+                              : "Suspended"}
+                          </span>
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Created Date */}
+                    <td className="px-4 py-4 text-xs text-gray-600 min-w-[140px]">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {officer.createdAt
+                            ? new Date(officer.createdAt).toLocaleDateString()
+                            : "N/A"}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {officer.createdAt
+                            ? new Date(officer.createdAt).toLocaleTimeString()
+                            : ""}
+                        </p>
+                      </div>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-4 min-w-[120px]">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => openEditModal(officer)}
+                          className="p-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg transition"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleDeleteOfficer(officer.id, officer.displayName)
+                          }
+                          className="p-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition"
+                          title="Delete"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Modal */}

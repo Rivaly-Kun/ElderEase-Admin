@@ -405,42 +405,116 @@ const Dashboard = () => {
         setMembershipTrends(trendsData);
 
         // === Members by Purok ===
-        // Dynamically collect all unique puroks from members
-        const purokSet = new Set();
-        const purokCounts = {};
+        const parsePurokBase = (rawValue, allowWithoutKeyword = false) => {
+          if (!rawValue) return null;
+
+          const text = String(rawValue).trim();
+          if (!text) return null;
+
+          const hasKeyword = /purok/i.test(text);
+          if (!hasKeyword && !allowWithoutKeyword) {
+            return null;
+          }
+
+          let cleaned = text.replace(/\[|\]/g, " ").replace(/\s+/g, " ");
+
+          if (hasKeyword) {
+            cleaned = cleaned.replace(/^.*?purok\s*/i, "");
+          }
+
+          cleaned = cleaned.replace(/\b(?:barangay|brgy\.?|sitio)\b.*$/i, "");
+
+          cleaned = cleaned.replace(
+            /\b(?:pasig|city|metro\s+manila|manila|philippines)\b.*$/i,
+            ""
+          );
+
+          cleaned = cleaned
+            .replace(/[^0-9a-zA-Z\-\s]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+          if (!cleaned) return null;
+
+          return cleaned;
+        };
+
+        const formatPurokLabel = (baseName) => {
+          if (!baseName) return "Purok Unspecified";
+
+          const words = baseName
+            .split(" ")
+            .filter(Boolean)
+            .map((word) => {
+              if (word.length === 1) return word.toUpperCase();
+              return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+            });
+
+          const formatted = words.join(" ");
+          return /^purok/i.test(formatted) ? formatted : `Purok ${formatted}`;
+        };
+
+        const extractPurokBase = (member) => {
+          const direct = parsePurokBase(member?.purok, true);
+          if (direct) return direct;
+
+          const address = String(member?.address || "").trim();
+          if (!address) return null;
+
+          const bracketMatch = address.match(/\[\s*purok\s*([^\]]+)\]/i);
+          if (bracketMatch) {
+            const base = parsePurokBase(bracketMatch[1], true);
+            if (base) return base;
+          }
+
+          const regexMatch = address.match(/purok\s*([^,]+)/i);
+          if (regexMatch) {
+            const base = parsePurokBase(regexMatch[0], true);
+            if (base) return base;
+          }
+
+          const parts = address
+            .split(/[,;\n]/)
+            .map((part) => part.trim())
+            .filter(Boolean);
+
+          for (const part of parts) {
+            const base = parsePurokBase(part, false);
+            if (base) return base;
+          }
+
+          return null;
+        };
+
+        const purokMap = new Map();
 
         members.forEach((member) => {
           if (isMemberDeceased(member)) return;
 
-          // Extract purok from address field (same logic as MemberProfileModal)
-          let purok = member.purok?.trim();
+          const baseName = extractPurokBase(member);
+          const label = formatPurokLabel(baseName);
+          const key = label.toLowerCase();
 
-          // If no direct purok field, extract from address
-          if (!purok && member.address) {
-            const parts = member.address.split(",").map((p) => p.trim());
-            purok = parts[0]; // Extract Purok from position [0] in "Purok X, Pinagbuhatan, City..."
-          }
-
-          if (purok) {
-            purokSet.add(purok);
-            purokCounts[purok] = (purokCounts[purok] || 0) + 1;
+          if (purokMap.has(key)) {
+            purokMap.get(key).value += 1;
+          } else {
+            purokMap.set(key, {
+              name: label,
+              fullName: label,
+              value: 1,
+            });
           }
         });
 
-        // Convert Set to sorted array
-        const purokList = Array.from(purokSet).sort();
-
-        // If no puroks found, use empty array
-        if (purokList.length === 0) {
-          setPurokData([]);
-        } else {
-          const purokChartData = purokList.map((purok) => ({
-            name: purok.replace("Purok ", "").slice(0, 20),
-            value: purokCounts[purok] || 0,
+        const purokChartData = Array.from(purokMap.values())
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((item) => ({
+            ...item,
+            name:
+              item.name.length > 24 ? `${item.name.slice(0, 23)}…` : item.name,
           }));
 
-          setPurokData(purokChartData);
-        }
+        setPurokData(purokChartData);
       } catch (error) {
         console.error("Error loading dashboard data:", error);
       } finally {
@@ -585,7 +659,12 @@ const Dashboard = () => {
                           height={80}
                         />
                         <YAxis />
-                        <Tooltip />
+                        <Tooltip
+                          formatter={(value, _name, { payload }) => [
+                            value,
+                            payload?.fullName || "Purok",
+                          ]}
+                        />
                         <Bar
                           dataKey="value"
                           fill="#8b5cf6"
