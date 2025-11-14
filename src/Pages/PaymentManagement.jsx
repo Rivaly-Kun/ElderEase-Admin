@@ -14,12 +14,14 @@ import {
   Camera,
   Search,
   X,
+  Settings,
   DollarSign,
   Calendar,
   CreditCard,
   User,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import {
   ref as dbRef,
@@ -36,12 +38,33 @@ import { useMemberSearch } from "../Context/MemberSearchContext";
 import useResolvedCurrentUser from "../hooks/useResolvedCurrentUser";
 import { createAuditLogger } from "../utils/AuditLogger";
 
+const PAYMENT_METHODS_PATH = "settings/paymentSettings/methods";
+const DEFAULT_PAYMENT_METHODS = ["Cash", "GCash"];
+
+const sanitizePaymentMethods = (input) => {
+  if (!input) return [];
+
+  const rawValues = Array.isArray(input)
+    ? input
+    : typeof input === "object"
+    ? Object.values(input)
+    : [];
+
+  return Array.from(
+    new Set(
+      rawValues
+        .map((method) => (typeof method === "string" ? method.trim() : ""))
+        .filter((method) => method.length > 0)
+    )
+  );
+};
+
 const PaymentManagement = () => {
   const location = useLocation();
   const [showReceipt, setShowReceipt] = useState(null);
   const [payments, setPayments] = useState([]);
   const [seniors, setSeniors] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState(["Cash", "GCash"]); // Dynamic payment methods
+  const [paymentMethods, setPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMethod, setFilterMethod] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -93,18 +116,220 @@ const PaymentManagement = () => {
   const [newPayment, setNewPayment] = useState({
     oscaID: "",
     amount: "",
-    modePay: "Cash",
+    modePay: DEFAULT_PAYMENT_METHODS[0] || "",
     payDate: "",
     payDesc: "Annual Dues",
     authorAgent: actorLabel,
   });
   const [searchUser, setSearchUser] = useState("");
-  const [customPaymentMethod, setCustomPaymentMethod] = useState("");
-  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [showPaymentMethodManager, setShowPaymentMethodManager] =
+    useState(false);
+  const [newMethodName, setNewMethodName] = useState("");
+  const [methodError, setMethodError] = useState("");
+  const [methodSaving, setMethodSaving] = useState(false);
+  const [methodRemoving, setMethodRemoving] = useState("");
+
+  const primaryCashMethod = useMemo(() => {
+    const explicitCash = paymentMethods.find(
+      (method) => method.toLowerCase() === "cash"
+    );
+
+    return explicitCash || paymentMethods[0] || "Cash";
+  }, [paymentMethods]);
+
+  const secondaryMethod = useMemo(() => {
+    const fallback = paymentMethods.find(
+      (method) => method.toLowerCase() !== primaryCashMethod.toLowerCase()
+    );
+
+    return fallback || null;
+  }, [paymentMethods, primaryCashMethod]);
 
   useEffect(() => {
     setNewPayment((prev) => ({ ...prev, authorAgent: actorLabel }));
   }, [actorLabel]);
+
+  useEffect(() => {
+    const methodsRef = dbRef(db, PAYMENT_METHODS_PATH);
+
+    const unsubscribe = onValue(
+      methodsRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          set(methodsRef, DEFAULT_PAYMENT_METHODS).catch((error) =>
+            console.error("Error initializing payment methods:", error)
+          );
+          setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+          return;
+        }
+
+        const methods = sanitizePaymentMethods(snapshot.val());
+        if (methods.length === 0) {
+          set(methodsRef, DEFAULT_PAYMENT_METHODS).catch((error) =>
+            console.error("Error resetting payment methods:", error)
+          );
+          setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+          return;
+        }
+
+        setPaymentMethods(methods);
+      },
+      (error) => {
+        console.error("Error fetching payment methods:", error);
+        setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!paymentMethods.length) {
+      setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      return;
+    }
+
+    setFilterMethod((prev) =>
+      prev !== "All" && !paymentMethods.includes(prev) ? "All" : prev
+    );
+
+    setNewPayment((prev) => {
+      if (paymentMethods.includes(prev.modePay)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        modePay: paymentMethods[0] || "",
+      };
+    });
+
+    setEditPayment((prev) => {
+      if (!prev) return prev;
+      if (paymentMethods.includes(prev.modePay)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        modePay: paymentMethods[0] || "",
+      };
+    });
+  }, [paymentMethods]);
+
+  const addPaymentMethod = async (rawMethod) => {
+    const value = (rawMethod || "").trim();
+    if (!value) {
+      return { success: false, message: "Enter a payment method name." };
+    }
+
+    if (
+      paymentMethods.some(
+        (method) => method.toLowerCase() === value.toLowerCase()
+      )
+    ) {
+      return { success: false, message: "That payment method already exists." };
+    }
+
+    const updatedList = [...paymentMethods, value];
+
+    try {
+      await set(dbRef(db, PAYMENT_METHODS_PATH), updatedList);
+      setPaymentMethods(updatedList);
+      return { success: true };
+    } catch (error) {
+      console.error("Error adding payment method:", error);
+      return {
+        success: false,
+        message: "Failed to add payment method. Please try again.",
+      };
+    }
+  };
+
+  const removePaymentMethod = async (method) => {
+    if (paymentMethods.length <= 1) {
+      return {
+        success: false,
+        message: "At least one payment method must remain.",
+      };
+    }
+
+    const updatedList = paymentMethods.filter(
+      (current) => current.toLowerCase() !== (method || "").toLowerCase()
+    );
+
+    if (updatedList.length === paymentMethods.length) {
+      return {
+        success: false,
+        message: "Payment method not found.",
+      };
+    }
+
+    try {
+      await set(dbRef(db, PAYMENT_METHODS_PATH), updatedList);
+      setPaymentMethods(updatedList);
+      return { success: true };
+    } catch (error) {
+      console.error("Error removing payment method:", error);
+      return {
+        success: false,
+        message: "Failed to remove payment method. Please try again.",
+      };
+    }
+  };
+
+  const handleMethodAdd = async () => {
+    if (methodSaving) return;
+    setMethodError("");
+    setMethodSaving(true);
+    const result = await addPaymentMethod(newMethodName);
+    setMethodSaving(false);
+
+    if (!result.success) {
+      setMethodError(result.message);
+      return;
+    }
+
+    setNewMethodName("");
+  };
+
+  const handleMethodRemove = async (method) => {
+    if (methodRemoving === method) return;
+    setMethodError("");
+    setMethodRemoving(method);
+    const result = await removePaymentMethod(method);
+    setMethodRemoving("");
+
+    if (!result.success) {
+      setMethodError(result.message);
+    }
+  };
+
+  const handleCloseMethodManager = () => {
+    setShowPaymentMethodManager(false);
+    setMethodError("");
+    setNewMethodName("");
+    setMethodSaving(false);
+    setMethodRemoving("");
+  };
+
+  const getPaymentMethodBadgeStyle = (method) => {
+    const normalizedMethod = (method || "").toLowerCase();
+    const normalizedCash = primaryCashMethod.toLowerCase();
+    const normalizedSecondary = secondaryMethod
+      ? secondaryMethod.toLowerCase()
+      : null;
+
+    if (normalizedMethod === normalizedCash) {
+      return "bg-green-100 text-green-700";
+    }
+
+    if (normalizedSecondary && normalizedMethod === normalizedSecondary) {
+      return "bg-orange-100 text-orange-700";
+    }
+
+    return "bg-purple-100 text-purple-700";
+  };
 
   // Fetch seniors from Firebase
   useEffect(() => {
@@ -214,7 +439,7 @@ const PaymentManagement = () => {
       setNewPayment({
         oscaID: "",
         amount: "",
-        modePay: "GCash",
+        modePay: paymentMethods[0] || DEFAULT_PAYMENT_METHODS[0] || "",
         payDate: "",
         payDesc: "Annual Dues",
         authorAgent: actorLabel,
@@ -658,17 +883,21 @@ const PaymentManagement = () => {
               <p className="text-blue-200 text-xs">Current month total</p>
             </div>
 
-            {/* Cash Payments */}
+            {/* Cash / Primary Method */}
             <div className="bg-gradient-to-br from-green-500 to-green-700 rounded-2xl shadow-xl p-6 text-white transform hover:scale-105 transition-transform">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <p className="text-green-200 text-sm font-medium mb-1">
-                    Cash Payments
+                    {primaryCashMethod} Payments
                   </p>
                   <h3 className="text-4xl font-bold">
                     ₱
                     {payments
-                      .filter((p) => p.modePay === "Cash")
+                      .filter(
+                        (p) =>
+                          (p.modePay || "").toLowerCase() ===
+                          primaryCashMethod.toLowerCase()
+                      )
                       .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
                       .toLocaleString()}
                   </h3>
@@ -680,17 +909,25 @@ const PaymentManagement = () => {
               <p className="text-green-200 text-xs">Cash payments</p>
             </div>
 
-            {/* Online Payments */}
+            {/* Secondary / Other Methods */}
             <div className="bg-gradient-to-br from-orange-500 to-orange-700 rounded-2xl shadow-xl p-6 text-white transform hover:scale-105 transition-transform">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <p className="text-orange-200 text-sm font-medium mb-1">
-                    Online Payments
+                    {secondaryMethod
+                      ? `${secondaryMethod} Payments`
+                      : "Other Payments"}
                   </p>
                   <h3 className="text-4xl font-bold">
                     ₱
                     {payments
-                      .filter((p) => p.modePay === "GCash")
+                      .filter((p) => {
+                        const normalized = (p.modePay || "").toLowerCase();
+                        if (secondaryMethod) {
+                          return normalized === secondaryMethod.toLowerCase();
+                        }
+                        return normalized !== primaryCashMethod.toLowerCase();
+                      })
                       .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
                       .toLocaleString()}
                   </h3>
@@ -812,13 +1049,11 @@ const PaymentManagement = () => {
                         </td>
                         <td className="px-6 py-4 text-sm">
                           <span
-                            className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                              item.modePay === "GCash"
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-green-100 text-green-700"
-                            }`}
+                            className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getPaymentMethodBadgeStyle(
+                              item.modePay
+                            )}`}
                           >
-                            {item.modePay}
+                            {item.modePay || "N/A"}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">
@@ -961,6 +1196,113 @@ const PaymentManagement = () => {
         />
       )}
 
+      {showPaymentMethodManager && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[120] p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-600 to-gray-700 px-8 py-6 flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-white">
+                  Payment Methods
+                </h2>
+                <p className="text-gray-200 text-sm mt-1">
+                  Manage available payment options
+                </p>
+              </div>
+              <button
+                onClick={handleCloseMethodManager}
+                className="text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-2 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                  Available Methods
+                </h3>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {paymentMethods.map((method) => (
+                    <div
+                      key={method}
+                      className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3"
+                    >
+                      <span className="font-medium text-gray-700">
+                        {method}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleMethodRemove(method)}
+                        disabled={
+                          methodRemoving === method ||
+                          paymentMethods.length <= 1 ||
+                          methodSaving
+                        }
+                        className="flex items-center gap-2 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {methodRemoving === method ? (
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Removing...
+                          </span>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            Remove
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Add New Method
+                </label>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <input
+                    type="text"
+                    value={newMethodName}
+                    onChange={(e) => setNewMethodName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleMethodAdd();
+                      }
+                    }}
+                    placeholder="e.g. Bank Transfer"
+                    className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-slate-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleMethodAdd}
+                    disabled={methodSaving}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-slate-700 text-white rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {methodSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Add Method
+                      </>
+                    )}
+                  </button>
+                </div>
+                {methodError && (
+                  <p className="text-xs text-red-600 mt-2">{methodError}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Enhanced Add Payment Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
@@ -1100,24 +1442,32 @@ const PaymentManagement = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                    <CreditCard className="w-4 h-4 text-purple-600" />
-                    Payment Method
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <CreditCard className="w-4 h-4 text-purple-600" />
+                      Payment Method
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMethodError("");
+                        setNewMethodName("");
+                        setShowPaymentMethodManager(true);
+                      }}
+                      className="p-2 text-purple-600 hover:text-purple-800 rounded-lg hover:bg-purple-50 transition-colors"
+                      title="Manage payment methods"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                  </div>
                   <select
-                    value={showCustomInput ? "Custom" : newPayment.modePay}
-                    onChange={(e) => {
-                      if (e.target.value === "Custom") {
-                        setShowCustomInput(true);
-                        setCustomPaymentMethod("");
-                      } else {
-                        setShowCustomInput(false);
-                        setNewPayment({
-                          ...newPayment,
-                          modePay: e.target.value,
-                        });
-                      }
-                    }}
+                    value={newPayment.modePay}
+                    onChange={(e) =>
+                      setNewPayment({
+                        ...newPayment,
+                        modePay: e.target.value,
+                      })
+                    }
                     className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors bg-white"
                   >
                     {paymentMethods.map((method) => (
@@ -1125,41 +1475,7 @@ const PaymentManagement = () => {
                         {method}
                       </option>
                     ))}
-                    <option value="Custom">Custom</option>
                   </select>
-
-                  {showCustomInput && (
-                    <input
-                      type="text"
-                      placeholder="Enter custom payment method..."
-                      value={customPaymentMethod}
-                      onChange={(e) => setCustomPaymentMethod(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter" && customPaymentMethod.trim()) {
-                          const newMethod = customPaymentMethod.trim();
-                          setNewPayment({
-                            ...newPayment,
-                            modePay: newMethod,
-                          });
-                          setShowCustomInput(false);
-                          setCustomPaymentMethod("");
-                        }
-                      }}
-                      onBlur={() => {
-                        if (customPaymentMethod.trim()) {
-                          const newMethod = customPaymentMethod.trim();
-                          setNewPayment({
-                            ...newPayment,
-                            modePay: newMethod,
-                          });
-                        }
-                        setShowCustomInput(false);
-                        setCustomPaymentMethod("");
-                      }}
-                      className="w-full border-2 border-purple-300 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors"
-                      autoFocus
-                    />
-                  )}
                 </div>
               </div>
 
@@ -1208,14 +1524,12 @@ const PaymentManagement = () => {
                   setNewPayment({
                     oscaID: "",
                     amount: "",
-                    modePay: "Cash",
+                    modePay: paymentMethods[0] || "Cash",
                     payDate: "",
                     payDesc: "Annual Dues",
                     authorAgent: actorLabel,
                   });
                   setSearchUser("");
-                  setShowCustomInput(false);
-                  setCustomPaymentMethod("");
                 }}
                 className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-all font-semibold"
               >
@@ -1277,13 +1591,11 @@ const PaymentManagement = () => {
                         </td>
                         <td className="px-6 py-4 text-sm">
                           <span
-                            className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                              h.modePay === "GCash"
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-green-100 text-green-700"
-                            }`}
+                            className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getPaymentMethodBadgeStyle(
+                              h.modePay
+                            )}`}
                           >
-                            {h.modePay}
+                            {h.modePay || "N/A"}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-700">
